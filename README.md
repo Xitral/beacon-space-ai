@@ -4,6 +4,8 @@
 
 The goal is to study how machine learning can support safer space operations by producing predictions that are not only accurate, but also calibrated, uncertainty-aware, and useful for prioritizing rare high-risk events.
 
+BEACON is a research prototype only. It is not an operational collision-avoidance system and should not be used for real-world satellite operations.
+
 ## Research Direction
 
 This project explores **trustworthy AI for space operations**, especially:
@@ -13,7 +15,8 @@ This project explores **trustworthy AI for space operations**, especially:
 - uncertainty-aware decision support
 - rare-event prioritization
 - space-domain safety and resilience
-- bayesian uncertainty estimation
+- Bayesian-inspired uncertainty estimation
+- human-in-the-loop escalation
 
 ## Research Questions
 
@@ -21,9 +24,9 @@ This project explores **trustworthy AI for space operations**, especially:
 
 **RQ2:** How does performance change when predictions are made earlier before closest approach?
 
-**RQ3:** Are predicted risk scores calibrated enough to support decision-making?
+**RQ3:** Do learned models improve rare-event ranking over direct current-risk ranking?
 
-**RQ4:** Can models rank the top 1%, 5%, and 10% riskiest conjunction events?
+**RQ4:** Are predicted risk scores calibrated enough to support decision-making?
 
 **RQ5:** Can uncertainty estimates identify predictions that should be escalated for human review?
 
@@ -33,89 +36,75 @@ Satellite collision avoidance is a high-consequence decision-support problem. As
 
 This project does not attempt to replace operational conjunction assessment systems. Instead, it studies how machine learning models should be evaluated when used in space-safety contexts.
 
-## Planned Methods
+Because high-risk conjunctions are rare, accuracy alone is not a useful measure of success. BEACON focuses on ranking, calibration, top-K recall, and uncertainty-aware escalation.
 
-The project will compare several baseline models:
+## Task Definition
 
-- naive current-risk baseline
+The dataset consists of public conjunction data messages grouped by event.
+
+Each event may contain multiple CDM observations before time of closest approach, or TCA.
+
+BEACON defines a high-risk event using the final available event risk. An event is labeled high-risk if its final log10 risk is greater than or equal to `-5`, corresponding to a collision probability threshold of `10^-5`.
+
+The resulting prediction task is highly imbalanced, with high-risk events making up less than 1% of the event-level dataset.
+
+## Prediction Horizons
+
+BEACON evaluates event snapshots at four warning horizons:
+
+| Horizon | Definition |
+|---|---|
+| `early` | earliest available CDM for each event |
+| `3d` | closest available CDM at least 3 days before TCA |
+| `2d` | closest available CDM at least 2 days before TCA |
+| `1d` | closest available CDM at least 1 day before TCA |
+
+The original project direction considered a 7-day horizon, but the dataset did not support a reliable true 7-day snapshot for every event. The `early` horizon is used instead to honestly represent the earliest available observation for each event.
+
+## Methods
+
+The project compares several models and evaluation approaches:
+
+- current-risk baseline
 - logistic regression
 - random forest
 - gradient boosting
-- calibrated gradient boosting
-- simple ensemble uncertainty estimation
+- sigmoid-calibrated gradient boosting
+- bootstrap ensemble uncertainty estimation
 
-The focus is not only on prediction accuracy, but also on whether the models produce useful and trustworthy risk scores.
+The current-risk baseline ranks events directly by the CDM-provided current risk estimate. This is an important baseline because the existing risk value is already domain-relevant.
+
+Gradient boosting is evaluated both before and after sigmoid calibration. Calibration is measured using Brier score, Expected Calibration Error, and reliability curves.
+
+For uncertainty estimation, BEACON trains a bootstrap ensemble of gradient boosting models. Predictive standard deviation across ensemble members is used as an uncertainty score. This method is **Bayesian-inspired**, not fully Bayesian, because it estimates uncertainty through model disagreement rather than explicit priors, likelihoods, and posterior inference.
 
 ## Evaluation Metrics
 
-Planned metrics include:
+The project reports:
 
 - ROC-AUC
 - PR-AUC
 - Brier score
 - Expected Calibration Error
-- precision at top K
-- recall at top K
+- precision at top 1%, 5%, and 10%
+- recall at top 1%, 5%, and 10%
 - reliability diagrams
+- quantile-binned reliability curves
 - early-warning horizon performance
 - uncertainty-abstention analysis
+- positive escalation rate under uncertainty-based review
+
+Accuracy is not emphasized because the positive class is extremely rare.
 
 ## Key Design Rule
 
-Train, validation, and test splits should be performed by `event_id`, not by individual CDM row.
+Train, validation, and test splits are performed by `event_id`, not by individual CDM row.
 
 This prevents information from the same conjunction event from leaking across splits.
 
-## Repository Structure
+## Reproducing the Pipeline
 
-```text
-trustworthy-space-ai/
-  README.md
-  LICENSE
-  .gitignore
-  requirements.txt
+Run the full BEACON experiment pipeline with:
 
-  docs/
-    experiment_plan.md
-
-  paper/
-    main.pdf
-
-  notebooks/
-    exploratory_analysis.ipynb
-
-  src/
-    config.py
-    preprocess.py
-    build_horizons.py
-    train_models.py
-    calibrate_models.py
-    evaluate.py
-    make_figures.py
-    run_all.py
-
-  data/
-    README.md
-    raw/
-    processed/
-
-  results/
-    metrics.csv
-
-  figures/
-    reliability_diagram.png
-    horizon_performance.png
-    topk_risk_capture.png
-```
-
-## Project Status
-
-This repository is an active independent research project.
-
-## Limitations
-
-BEACON is a research prototype only. It is not an operational collision-avoidance system, does not recommend maneuvers, and should not be used for real-world satellite operations.
-
-## License
-
-Code in this repository is released under the MIT License. Dataset use is governed by the original dataset provider’s license and terms.
+```bash
+python src/run_all.py
