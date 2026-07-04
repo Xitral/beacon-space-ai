@@ -29,6 +29,7 @@ INPUT_PATH = PROCESSED_DIR / "horizon_snapshots.parquet"
 
 METRICS_OUTPUT_PATH = RESULTS_DIR / "calibration_metrics.csv"
 CURVES_OUTPUT_PATH = RESULTS_DIR / "calibration_curves.csv"
+QUANTILE_CURVES_OUTPUT_PATH = RESULTS_DIR / "calibration_curves_quantile.csv"
 
 EXTRA_EXCLUDE_COLUMNS = {
     "final_time_to_tca",
@@ -173,6 +174,72 @@ def calibration_curve_rows(
 
     return rows
 
+def quantile_calibration_curve_rows(
+    y_true,
+    y_prob,
+    model_name: str,
+    horizon: str,
+    split: str,
+    n_bins: int = 10,
+):
+    """
+    Calibration curve using equal-count bins.
+
+    This is better for rare-event settings because linear bins often place
+    almost every prediction into the lowest probability bin.
+    """
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+
+    if len(y_prob) == 0:
+        return []
+
+    order = np.argsort(y_prob)
+    y_true_sorted = y_true[order]
+    y_prob_sorted = y_prob[order]
+
+    index_bins = np.array_split(np.arange(len(y_prob_sorted)), n_bins)
+
+    rows = []
+
+    for bin_id, indices in enumerate(index_bins):
+        if len(indices) == 0:
+            rows.append(
+                {
+                    "model": model_name,
+                    "horizon": horizon,
+                    "split": split,
+                    "bin_id": bin_id,
+                    "bin_type": "quantile",
+                    "count": 0,
+                    "min_predicted_probability": np.nan,
+                    "max_predicted_probability": np.nan,
+                    "mean_predicted_probability": np.nan,
+                    "observed_positive_rate": np.nan,
+                }
+            )
+            continue
+
+        bin_probs = y_prob_sorted[indices]
+        bin_true = y_true_sorted[indices]
+
+        rows.append(
+            {
+                "model": model_name,
+                "horizon": horizon,
+                "split": split,
+                "bin_id": bin_id,
+                "bin_type": "quantile",
+                "count": int(len(indices)),
+                "min_predicted_probability": float(np.min(bin_probs)),
+                "max_predicted_probability": float(np.max(bin_probs)),
+                "mean_predicted_probability": float(np.mean(bin_probs)),
+                "observed_positive_rate": float(np.mean(bin_true)),
+            }
+        )
+
+    return rows
+
 
 def sanitize_features(df: pd.DataFrame, feature_cols: list[str]) -> tuple[pd.DataFrame, list[str]]:
     df = df.copy()
@@ -245,6 +312,7 @@ def main() -> None:
 
     metrics_rows = []
     curve_rows = []
+    quantile_curve_rows = []
 
     for horizon in EARLY_HORIZONS:
         horizon_df = df[df["horizon"] == horizon].copy()
@@ -332,15 +400,28 @@ def main() -> None:
                     )
                 )
 
+                quantile_curve_rows.extend(
+                    quantile_calibration_curve_rows(
+                        y_true=y_true,
+                        y_prob=y_prob,
+                        model_name=model_name,
+                        horizon=horizon,
+                        split=split_name,
+                    )
+                )
+
     metrics_df = pd.DataFrame(metrics_rows)
     curves_df = pd.DataFrame(curve_rows)
+    quantile_curves_df = pd.DataFrame(quantile_curve_rows)
 
     metrics_df.to_csv(METRICS_OUTPUT_PATH, index=False)
     curves_df.to_csv(CURVES_OUTPUT_PATH, index=False)
+    quantile_curves_df.to_csv(QUANTILE_CURVES_OUTPUT_PATH, index=False)
 
     print("\nWrote:")
     print(METRICS_OUTPUT_PATH)
     print(CURVES_OUTPUT_PATH)
+    print(QUANTILE_CURVES_OUTPUT_PATH)
 
     print("\nCalibration test metrics:")
     print(
