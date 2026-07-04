@@ -37,6 +37,11 @@ DEFAULT_STEPS = [
         "optional": False,
     },
     {
+        "name": "Run Bayesian logistic baseline",
+        "script": "src/bayesian_logistic.py",
+        "optional": False,
+    },
+    {
         "name": "Run uncertainty experiment",
         "script": "src/uncertainty.py",
         "optional": False,
