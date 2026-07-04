@@ -295,6 +295,36 @@ def main():
         print(f"Validation rows: {len(val_df):,}")
         print(f"Test rows: {len(test_df):,}")
 
+        # Baseline: use the current CDM risk estimate directly.
+        # ESA risk is log10(probability), so convert it back to probability.
+        # Higher risk values, such as -4, mean higher collision probability than -6.
+        if "risk" in feature_cols:
+            for split_name, split_df in [
+                ("validation", val_df),
+                ("test", test_df),
+            ]:
+                y = split_df["high_risk"].astype(int).to_numpy()
+
+                risk_log10 = pd.to_numeric(split_df["risk"], errors="coerce")
+                risk_log10 = risk_log10.replace([np.inf, -np.inf], np.nan)
+                risk_log10 = risk_log10.fillna(risk_log10.median())
+                risk_log10 = risk_log10.clip(lower=-30, upper=0)
+
+                y_prob = np.power(10.0, risk_log10.to_numpy())
+
+                metrics = evaluate_predictions(y, y_prob)
+
+                rows.append(
+                    {
+                        "model": "current_risk_baseline",
+                        "horizon": horizon,
+                        "split": split_name,
+                        "n": len(split_df),
+                        "positive_rate": float(y.mean()),
+                        **metrics,
+                    }
+                )
+
         models = build_models()
 
         for model_name, model in models.items():
