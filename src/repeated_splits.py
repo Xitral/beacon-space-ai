@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import warnings
@@ -19,6 +20,13 @@ from train_models import (
     get_feature_columns,
     make_event_splits,
 )
+
+try:
+    from threadpoolctl import threadpool_limits
+except Exception:
+    @contextmanager
+    def threadpool_limits(limits=None):
+        yield
 
 
 warnings.filterwarnings("ignore")
@@ -40,6 +48,7 @@ DEFAULT_N_BOOTSTRAPS = 10
 DEFAULT_START_SEED = 42
 DEFAULT_MAX_ITER = 150
 DEFAULT_N_JOBS = max(1, min(4, (os.cpu_count() or 2) - 1))
+DEFAULT_BACKEND = "loky"
 ESCALATION_FRACTIONS = [0.05, 0.10, 0.20, 0.30]
 
 EXTRA_EXCLUDE_COLUMNS = {
@@ -107,8 +116,18 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_N_JOBS,
         help=(
-            "Parallel split workers. Use 1 for serial execution, -1 for all cores, "
-            "or a positive number such as 4 or 6."
+            "Parallel split/horizon workers. Use 1 for serial execution, -1 for all "
+            "cores, or a positive number such as 4, 6, or 8."
+        ),
+    )
+
+    parser.add_argument(
+        "--backend",
+        choices=["loky", "threading"],
+        default=DEFAULT_BACKEND,
+        help=(
+            "Joblib backend. 'loky' uses processes and is safer. 'threading' can be "
+            "faster on Windows because it avoids copying DataFrames."
         ),
     )
 
@@ -289,11 +308,15 @@ def positive_escalation_row(
     }
 
 
-def run_split(
+def run_horizon_job(
+    job_index: int,
+    total_jobs: int,
     split_index: int,
     split_seed: int,
     n_splits: int,
-    df: pd.DataFrame,
+    horizon_index: int,
+    horizon: str,
+    horizon_df: pd.DataFrame,
     feature_cols: list[str],
     n_bootstraps: int,
     max_iter: int,
@@ -302,34 +325,33 @@ def run_split(
     metrics_rows = []
     escalation_rows = []
 
-    print("\n" + "=" * 80)
-    print(f"Repeated split {split_index}/{n_splits} with seed {split_seed}")
-    print("=" * 80)
+    print(
+        f"[{job_index}/{total_jobs}] split {split_index}/{n_splits} "
+        f"seed={split_seed} horizon={horizon}"
+    )
 
-    split_df = make_event_splits(df, random_state=split_seed)
+    if horizon_df.empty:
+        print(f"Skipping empty horizon {horizon}.")
+        return metrics_rows, escalation_rows
 
-    for horizon_index, horizon in enumerate(EARLY_HORIZONS):
-        horizon_df = split_df[split_df["horizon"] == horizon].copy()
+    train_df = horizon_df[horizon_df["split"] == "train"]
+    test_df = horizon_df[horizon_df["split"] == "test"]
 
-        if horizon_df.empty:
-            print(f"Skipping empty horizon {horizon}.")
-            continue
+    y_train = train_df["high_risk"].astype(int).to_numpy()
+    y_test = test_df["high_risk"].astype(int).to_numpy()
 
-        train_df = horizon_df[horizon_df["split"] == "train"]
-        test_df = horizon_df[horizon_df["split"] == "test"]
+    print(
+        f"{horizon}: train={len(train_df):,}, test={len(test_df):,}, "
+        f"test positives={int(y_test.sum())}"
+    )
 
-        y_train = train_df["high_risk"].astype(int).to_numpy()
-        y_test = test_df["high_risk"].astype(int).to_numpy()
+    if len(np.unique(y_train)) < 2:
+        print("Training split has one class. Skipping horizon.")
+        return metrics_rows, escalation_rows
 
-        print(
-            f"{horizon}: train={len(train_df):,}, test={len(test_df):,}, "
-            f"test positives={int(y_test.sum())}"
-        )
-
-        if len(np.unique(y_train)) < 2:
-            print("Training split has one class. Skipping horizon.")
-            continue
-
+    # Keep native OpenMP/BLAS workers from multiplying across joblib workers.
+    # This avoids CPU oversubscription and usually improves end-to-end runtime.
+    with threadpool_limits(limits=1):
         current_prob = current_risk_probability(test_df)
         add_metric_row(
             rows=metrics_rows,
@@ -384,7 +406,7 @@ def run_split(
             )
 
         if skip_uncertainty:
-            continue
+            return metrics_rows, escalation_rows
 
         bootstrap_seed = split_seed + horizon_index * 100_000
         bootstrap_models = fit_bootstrap_ensemble(
@@ -422,6 +444,36 @@ def run_split(
             )
 
     return metrics_rows, escalation_rows
+
+
+def build_horizon_jobs(
+    df: pd.DataFrame,
+    split_seeds: list[int],
+) -> list[dict]:
+    jobs = []
+    total_jobs = len(split_seeds) * len(EARLY_HORIZONS)
+    job_index = 0
+
+    for split_index, split_seed in enumerate(split_seeds, start=1):
+        split_df = make_event_splits(df, random_state=split_seed)
+
+        for horizon_index, horizon in enumerate(EARLY_HORIZONS):
+            job_index += 1
+            horizon_df = split_df[split_df["horizon"] == horizon].copy()
+
+            jobs.append(
+                {
+                    "job_index": job_index,
+                    "total_jobs": total_jobs,
+                    "split_index": split_index,
+                    "split_seed": split_seed,
+                    "horizon_index": horizon_index,
+                    "horizon": horizon,
+                    "horizon_df": horizon_df,
+                }
+            )
+
+    return jobs
 
 
 def summarize_metric_rows(metrics_df: pd.DataFrame) -> pd.DataFrame:
@@ -519,53 +571,65 @@ def main() -> None:
         print(f"- {col}")
 
     split_seeds = [args.start_seed + i for i in range(args.n_splits)]
+    jobs = build_horizon_jobs(df=df, split_seeds=split_seeds)
 
     print("\nRepeated split configuration:")
     print(f"- splits: {args.n_splits}")
+    print(f"- horizons: {len(EARLY_HORIZONS)}")
+    print(f"- split/horizon jobs: {len(jobs)}")
     print(f"- bootstraps per split/horizon: {args.n_bootstraps}")
     print(f"- max_iter: {args.max_iter}")
     print(f"- n_jobs: {args.n_jobs}")
+    print(f"- backend: {args.backend}")
     print(f"- skip_uncertainty: {args.skip_uncertainty}")
 
     if args.n_jobs == 1:
         results = [
-            run_split(
-                split_index=split_index,
-                split_seed=split_seed,
+            run_horizon_job(
+                job_index=job["job_index"],
+                total_jobs=job["total_jobs"],
+                split_index=job["split_index"],
+                split_seed=job["split_seed"],
                 n_splits=args.n_splits,
-                df=df,
+                horizon_index=job["horizon_index"],
+                horizon=job["horizon"],
+                horizon_df=job["horizon_df"],
                 feature_cols=feature_cols,
                 n_bootstraps=args.n_bootstraps,
                 max_iter=args.max_iter,
                 skip_uncertainty=args.skip_uncertainty,
             )
-            for split_index, split_seed in enumerate(split_seeds, start=1)
+            for job in jobs
         ]
     else:
         results = Parallel(
             n_jobs=args.n_jobs,
-            backend="loky",
+            backend=args.backend,
             verbose=10,
         )(
-            delayed(run_split)(
-                split_index=split_index,
-                split_seed=split_seed,
+            delayed(run_horizon_job)(
+                job_index=job["job_index"],
+                total_jobs=job["total_jobs"],
+                split_index=job["split_index"],
+                split_seed=job["split_seed"],
                 n_splits=args.n_splits,
-                df=df,
+                horizon_index=job["horizon_index"],
+                horizon=job["horizon"],
+                horizon_df=job["horizon_df"],
                 feature_cols=feature_cols,
                 n_bootstraps=args.n_bootstraps,
                 max_iter=args.max_iter,
                 skip_uncertainty=args.skip_uncertainty,
             )
-            for split_index, split_seed in enumerate(split_seeds, start=1)
+            for job in jobs
         )
 
     metrics_rows = []
     escalation_rows = []
 
-    for split_metric_rows, split_escalation_rows in results:
-        metrics_rows.extend(split_metric_rows)
-        escalation_rows.extend(split_escalation_rows)
+    for job_metric_rows, job_escalation_rows in results:
+        metrics_rows.extend(job_metric_rows)
+        escalation_rows.extend(job_escalation_rows)
 
     metrics_df = pd.DataFrame(metrics_rows)
     escalation_df = pd.DataFrame(escalation_rows)
