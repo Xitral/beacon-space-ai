@@ -106,4 +106,15 @@ trustworthy-space-ai/
     reliability_diagram.png
     horizon_performance.png
     topk_risk_capture.png
-    
+
+## Project Status
+
+This repository is an active independent research project.
+
+## Limitations
+
+BEACON is a research prototype only. It is not an operational collision-avoidance system, does not recommend maneuvers, and should not be used for real-world satellite operations.
+
+## License
+
+Code in this repository is released under the MIT License. Dataset use is governed by the original dataset provider’s license and terms.
