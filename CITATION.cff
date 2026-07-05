@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use BEACON, please cite this software and the original public dataset provider."
+message: "If you use BEACON, please cite this software artifact and the original public dataset provider."
 title: "BEACON: Bayesian Event Assessment for Conjunction Observation and Notification"
 type: software
 authors:
@@ -7,20 +7,26 @@ authors:
     given-names: Zander
 repository-code: "https://github.com/Xitral/beacon-space-ai"
 url: "https://github.com/Xitral/beacon-space-ai"
-version: "0.1.0"
-date-released: "2026-07-04"
+doi: "10.5281/zenodo.21209120"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.21209120"
+    description: "Zenodo DOI for the BEACON v0.2.1 archived software artifact"
+version: "0.2.1"
+date-released: "2026-07-05"
 license: MIT
 abstract: >-
   BEACON is a reproducible research prototype for calibrated, uncertainty-aware
   machine learning in satellite conjunction triage. It evaluates leakage-safe
   event-level prediction horizons, calibrated gradient boosting, Bayesian
-  logistic regression, bootstrap uncertainty escalation, and repeated split
-  robustness on public conjunction data.
+  logistic regression, bootstrap uncertainty escalation, repeated split
+  robustness, and current-risk feature ablation on public conjunction data.
 keywords:
   - trustworthy AI
   - satellite conjunction assessment
   - uncertainty quantification
-  - calibration
+  - probability calibration
   - rare events
   - Bayesian machine learning
   - space-domain awareness
+  - risk ablation
