@@ -8,6 +8,8 @@
   --target: #57a5ff;
   --secondary: #ffb84d;
   --separation: #ff5b6e;
+  --input-bg: #171d29;
+  --input-bg-focus: #20283a;
 }
 
 * {
@@ -78,10 +80,35 @@ button {
   width: 100%;
   border: 1px solid rgba(164, 190, 255, 0.28);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--input-bg);
   color: var(--text);
   padding: 10px 12px;
   font-size: 0.92rem;
+  color-scheme: dark;
+}
+
+select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  background-color: var(--input-bg);
+  color: var(--text);
+}
+
+select:focus,
+button:focus {
+  outline: 2px solid rgba(120, 166, 255, 0.55);
+  outline-offset: 2px;
+  background: var(--input-bg-focus);
+}
+
+select option {
+  background-color: #0b101a;
+  color: var(--text);
+}
+
+select option:checked {
+  background-color: #78a6ff;
+  color: #06101f;
 }
 
 button {
