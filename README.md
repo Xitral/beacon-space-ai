@@ -1,10 +1,44 @@
 # BEACON
 
+[![CI](https://github.com/Xitral/trustworthy-space-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Xitral/trustworthy-space-ai/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-research%20prototype-orange)
+![Release](https://img.shields.io/badge/release-v0.1.0-purple)
+
 **BEACON (Bayesian Event Assessment for Conjunction Observation and Notification)** is a reproducible research project focused on calibrated, probabilistic, and uncertainty-aware risk prediction for satellite conjunction assessment using public CDM data.
 
 The goal is to study how machine learning can support safer space operations by producing predictions that are not only accurate, but also calibrated, uncertainty-aware, robust across repeated event-level splits, and useful for prioritizing rare high-risk events.
 
-BEACON is a research prototype only. It is not an operational collision-avoidance system and should not be used for real-world satellite operations.
+BEACON is a research prototype only. It is not an operational space-safety system and should not be used for real-world operations.
+
+## Release and Citation
+
+The current release is **v0.1.0**, the first reproducible research-artifact release.
+
+Citation metadata is available in:
+
+```text
+CITATION.cff
+```
+
+Release history is available in:
+
+```text
+CHANGELOG.md
+```
+
+A reviewer-facing reproducibility checklist is available in:
+
+```text
+docs/reproducibility_checklist.md
+```
+
+A short project summary is available in:
+
+```text
+docs/project_summary.md
+```
 
 ## Research Direction
 
@@ -37,17 +71,13 @@ This project explores **trustworthy AI for space operations**, especially:
 
 ## Why This Matters
 
-Satellite collision avoidance is a high-consequence decision-support problem. As orbital environments become more congested, operators need tools that can help prioritize attention, identify risky events, and communicate uncertainty clearly.
-
-This project does not attempt to replace operational conjunction assessment systems. Instead, it studies how machine learning models should be evaluated when used in space-safety contexts.
+Satellite conjunction triage is a high-consequence rare-event decision-support problem. Operators must prioritize a small number of potentially important events from a much larger stream of routine warnings.
 
 Because high-risk conjunctions are rare, accuracy alone is not a useful measure of success. BEACON focuses on ranking, calibration, top-K recall, uncertainty-aware escalation, and robustness across repeated event-level splits.
 
 ## Task Definition
 
-The dataset consists of public conjunction data messages grouped by event.
-
-Each event may contain multiple CDM observations before time of closest approach, or TCA.
+The dataset consists of public conjunction data messages grouped by event. Each event may contain multiple CDM observations before time of closest approach, or TCA.
 
 BEACON defines a high-risk event using the final available event risk. An event is labeled high-risk if its final log10 risk is greater than or equal to `-5`, corresponding to a collision probability threshold of `10^-5`.
 
@@ -150,17 +180,8 @@ Optional commands:
 
 ```bash
 python src/run_all.py --skip-inspect
-```
-
-```bash
 python src/run_all.py --skip-uncertainty
-```
-
-```bash
 python src/run_all.py --skip-repeated-splits
-```
-
-```bash
 python src/run_all.py --continue-on-error
 ```
 
@@ -207,7 +228,7 @@ python src/repeated_splits.py --n-splits 20 --n-bootstraps 10 --max-iter 150 --n
 Run the lightweight synthetic test suite with:
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
 The tests do not require the raw dataset. They cover:
@@ -225,6 +246,8 @@ A GitHub Actions workflow runs the same tests on push and pull request.
 ```text
 trustworthy-space-ai/
   README.md
+  CHANGELOG.md
+  CITATION.cff
   LICENSE
   .gitignore
   requirements.txt
@@ -235,6 +258,8 @@ trustworthy-space-ai/
 
   docs/
     experiment_plan.md
+    project_summary.md
+    reproducibility_checklist.md
 
   paper/
     main.md
@@ -416,13 +441,15 @@ Current status:
 - repeated split robustness figures implemented
 - synthetic test suite implemented
 - GitHub Actions CI implemented
+- release metadata implemented
+- reproducibility checklist implemented
 - figure generation implemented
 - technical report draft updated with repeated split results
 - one-command reproducibility pipeline added
 
 ## Limitations
 
-BEACON is a research prototype only. It is not an operational collision-avoidance system, does not recommend maneuvers, and should not be used for real-world satellite operations.
+BEACON is a research prototype only. It is not an operational space-safety system and should not be used for real-world operations.
 
 Important limitations include:
 
