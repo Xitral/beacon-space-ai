@@ -2,7 +2,7 @@
 
 **BEACON (Bayesian Event Assessment for Conjunction Observation and Notification)** is a reproducible research project focused on calibrated, probabilistic, and uncertainty-aware risk prediction for satellite conjunction assessment using public CDM data.
 
-The goal is to study how machine learning can support safer space operations by producing predictions that are not only accurate, but also calibrated, uncertainty-aware, and useful for prioritizing rare high-risk events.
+The goal is to study how machine learning can support safer space operations by producing predictions that are not only accurate, but also calibrated, uncertainty-aware, robust across repeated event-level splits, and useful for prioritizing rare high-risk events.
 
 BEACON is a research prototype only. It is not an operational collision-avoidance system and should not be used for real-world satellite operations.
 
@@ -19,6 +19,7 @@ This project explores **trustworthy AI for space operations**, especially:
 - Bayesian-inspired uncertainty estimation
 - human-in-the-loop escalation
 - repeated split robustness evaluation
+- leakage-safe evaluation design
 
 ## Research Questions
 
@@ -65,6 +66,8 @@ BEACON evaluates event snapshots at four warning horizons:
 
 The original project direction considered a 7-day horizon, but the dataset did not support a reliable true 7-day snapshot for every event. The `early` horizon is used instead to honestly represent the earliest available observation for each event.
 
+Preprocessing prefers pre-TCA rows. If an event has no pre-TCA rows, the pipeline falls back to an available row and records this in `results/horizon_post_tca_diagnostics.csv` rather than hiding the behavior.
+
 ## Methods
 
 The project compares several models and evaluation approaches:
@@ -79,6 +82,8 @@ The project compares several models and evaluation approaches:
 - repeated event-level split robustness evaluation
 
 The current-risk baseline ranks events directly by the CDM-provided current risk estimate. This is an important baseline because the existing risk value is already domain-relevant.
+
+Learned models are allowed to use the current CDM `risk` feature along with other numeric CDM/context features. The key comparison is therefore not “ML without risk versus current risk.” It is whether a learned model can improve triage over direct current-risk ranking by combining current risk with additional features.
 
 Gradient boosting is evaluated both before and after sigmoid calibration. Calibration is measured using Brier score, Expected Calibration Error, and reliability curves.
 
@@ -111,9 +116,17 @@ Accuracy is not emphasized because the positive class is extremely rare.
 
 Train, validation, and test splits are performed by `event_id`, not by individual CDM row.
 
-This prevents information from the same conjunction event from leaking across splits.
+This prevents information from the same conjunction event from leaking across splits. The test suite includes checks for event-level split leakage, feature exclusion, top-K metric behavior, and horizon preprocessing diagnostics.
 
 ## Reproducing the Pipeline
+
+First install dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Place the raw ESA Spacecraft Collision Avoidance Challenge training data in `data/raw/`. See `data/README.md` for expected filenames and required columns.
 
 Run the full BEACON experiment pipeline with:
 
@@ -151,6 +164,18 @@ python src/run_all.py --skip-repeated-splits
 python src/run_all.py --continue-on-error
 ```
 
+Repeated-split runtime can be controlled through `run_all.py`:
+
+```bash
+python src/run_all.py --skip-inspect --repeated-n-jobs 8 --repeated-backend threading
+```
+
+A faster smoke-style repeated split run can be launched with:
+
+```bash
+python src/run_all.py --skip-inspect --repeated-n-splits 2 --repeated-n-bootstraps 2 --repeated-max-iter 30 --repeated-n-jobs 4 --repeated-backend threading
+```
+
 Individual scripts can also be run manually:
 
 ```bash
@@ -177,6 +202,24 @@ On CPU-only laptops, this can be sped up with parallel workers:
 python src/repeated_splits.py --n-splits 20 --n-bootstraps 10 --max-iter 150 --n-jobs 8 --backend threading
 ```
 
+## Running Tests
+
+Run the lightweight synthetic test suite with:
+
+```bash
+pytest -q
+```
+
+The tests do not require the raw dataset. They cover:
+
+- event-level split isolation
+- leakage-prone feature exclusion
+- top-K metric semantics
+- horizon selection behavior
+- post-TCA diagnostic counting
+
+A GitHub Actions workflow runs the same tests on push and pull request.
+
 ## Repository Structure
 
 ```text
@@ -186,6 +229,10 @@ trustworthy-space-ai/
   .gitignore
   requirements.txt
 
+  .github/
+    workflows/
+      ci.yml
+
   docs/
     experiment_plan.md
 
@@ -194,6 +241,11 @@ trustworthy-space-ai/
 
   notebooks/
     exploratory_analysis.ipynb
+
+  tests/
+    conftest.py
+    test_preprocess.py
+    test_splits_and_metrics.py
 
   src/
     inspect_data.py
@@ -217,6 +269,7 @@ trustworthy-space-ai/
 
   results/
     horizon_coverage.csv
+    horizon_post_tca_diagnostics.csv
     baseline_metrics.csv
     calibration_metrics.csv
     calibration_curves.csv
@@ -264,6 +317,7 @@ Processed data:
 Results:
 
 - `results/horizon_coverage.csv`
+- `results/horizon_post_tca_diagnostics.csv`
 - `results/baseline_metrics.csv`
 - `results/calibration_metrics.csv`
 - `results/calibration_curves.csv`
@@ -351,6 +405,7 @@ Current status:
 - preprocessing pipeline implemented
 - event-level splits implemented
 - horizon coverage diagnostics implemented
+- post-TCA selected-row diagnostics implemented
 - baseline models implemented
 - calibration experiments implemented
 - quantile reliability curves implemented
@@ -359,6 +414,8 @@ Current status:
 - uncertainty escalation analysis implemented
 - repeated split robustness evaluation implemented
 - repeated split robustness figures implemented
+- synthetic test suite implemented
+- GitHub Actions CI implemented
 - figure generation implemented
 - technical report draft updated with repeated split results
 - one-command reproducibility pipeline added
@@ -376,6 +433,7 @@ Important limitations include:
 - research-defined high-risk threshold
 - Bayesian-inspired bootstrap uncertainty rather than full Bayesian inference over the strongest model
 - repeated split evaluation reduces single-split sensitivity but does not replace independent external validation
+- rare events without pre-TCA rows require explicit diagnostic handling
 
 Future work should include external validation, true Bayesian nonlinear models, cost-sensitive decision metrics, operationally informed escalation policies, and evaluation on additional conjunction datasets.
 
