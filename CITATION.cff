@@ -5,6 +5,8 @@ type: software
 authors:
   - family-names: Polk
     given-names: Zander
+repository-code: "https://github.com/Xitral/beacon-space-ai"
+url: "https://github.com/Xitral/beacon-space-ai"
 version: "0.1.0"
 date-released: "2026-07-04"
 license: MIT
