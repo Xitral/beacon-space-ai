@@ -52,6 +52,11 @@ DEFAULT_STEPS = [
         "optional": False,
     },
     {
+        "name": "Run current-risk feature ablation",
+        "script": "src/risk_ablation.py",
+        "optional": False,
+    },
+    {
         "name": "Generate figures and summary tables",
         "script": "src/make_figures.py",
         "optional": False,
@@ -92,6 +97,14 @@ REPEATED_SPLIT_EXPECTED_OUTPUTS = [
     "figures/repeated_split_escalation_10pct.png",
 ]
 
+RISK_ABLATION_EXPECTED_OUTPUTS = [
+    "results/risk_ablation_metrics.csv",
+    "results/risk_ablation_summary.csv",
+    "results/risk_ablation_deltas.csv",
+    "figures/risk_ablation_pr_auc.png",
+    "figures/risk_ablation_top5_recall.png",
+]
+
 FIGURE_EXPECTED_OUTPUTS = [
     "figures/pr_auc_by_horizon.png",
     "figures/top5_recall_by_horizon.png",
@@ -128,6 +141,12 @@ def parse_args() -> argparse.Namespace:
         "--skip-repeated-splits",
         action="store_true",
         help="Skip repeated event-level split robustness evaluation.",
+    )
+
+    parser.add_argument(
+        "--skip-risk-ablation",
+        action="store_true",
+        help="Skip current-risk feature ablation.",
     )
 
     parser.add_argument(
@@ -177,6 +196,34 @@ def parse_args() -> argparse.Namespace:
         help="Pass --skip-uncertainty to repeated_splits.py only.",
     )
 
+    parser.add_argument(
+        "--risk-ablation-n-splits",
+        type=int,
+        default=None,
+        help="Override risk_ablation.py --n-splits.",
+    )
+
+    parser.add_argument(
+        "--risk-ablation-max-iter",
+        type=int,
+        default=None,
+        help="Override risk_ablation.py --max-iter.",
+    )
+
+    parser.add_argument(
+        "--risk-ablation-n-jobs",
+        type=int,
+        default=None,
+        help="Override risk_ablation.py --n-jobs.",
+    )
+
+    parser.add_argument(
+        "--risk-ablation-backend",
+        choices=["loky", "threading"],
+        default=None,
+        help="Override risk_ablation.py --backend.",
+    )
+
     return parser.parse_args()
 
 
@@ -204,6 +251,24 @@ def repeated_split_args(args: argparse.Namespace) -> list[str]:
     return command_args
 
 
+def risk_ablation_args(args: argparse.Namespace) -> list[str]:
+    command_args = []
+
+    if args.risk_ablation_n_splits is not None:
+        command_args.extend(["--n-splits", str(args.risk_ablation_n_splits)])
+
+    if args.risk_ablation_max_iter is not None:
+        command_args.extend(["--max-iter", str(args.risk_ablation_max_iter)])
+
+    if args.risk_ablation_n_jobs is not None:
+        command_args.extend(["--n-jobs", str(args.risk_ablation_n_jobs)])
+
+    if args.risk_ablation_backend is not None:
+        command_args.extend(["--backend", args.risk_ablation_backend])
+
+    return command_args
+
+
 def build_steps(args: argparse.Namespace) -> list[dict]:
     steps = []
 
@@ -217,10 +282,15 @@ def build_steps(args: argparse.Namespace) -> list[dict]:
         if args.skip_repeated_splits and step["script"] == "src/repeated_splits.py":
             continue
 
+        if args.skip_risk_ablation and step["script"] == "src/risk_ablation.py":
+            continue
+
         step_copy = dict(step)
 
         if step_copy["script"] == "src/repeated_splits.py":
             step_copy["args"] = repeated_split_args(args)
+        elif step_copy["script"] == "src/risk_ablation.py":
+            step_copy["args"] = risk_ablation_args(args)
         else:
             step_copy["args"] = []
 
@@ -238,6 +308,9 @@ def expected_outputs(args: argparse.Namespace) -> list[str]:
 
     if not args.skip_repeated_splits:
         outputs.extend(REPEATED_SPLIT_EXPECTED_OUTPUTS)
+
+    if not args.skip_risk_ablation:
+        outputs.extend(RISK_ABLATION_EXPECTED_OUTPUTS)
 
     outputs.extend(FIGURE_EXPECTED_OUTPUTS)
 
