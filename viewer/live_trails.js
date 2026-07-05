@@ -1,9 +1,10 @@
 // Live trail alignment patch for the Cesium viewer.
 //
-// app.js owns the viewer state and scene entities. This small companion script
-// replaces the trail renderer with one that projects the live moving object
-// position onto the current interpolated orbit path every frame. That keeps the
-// visible trail head locked to the dot during prediction-horizon interpolation.
+// app.js owns the viewer state and scene entities. This companion script replaces
+// the trail renderer with one that projects the live moving object position onto
+// the current interpolated orbit path every frame. It then rebuilds the trail
+// entities so Cesium cannot keep displaying stale polyline geometry while the
+// prediction-horizon interpolation is in progress.
 
 (function patchLiveOrbitTrails() {
   function squaredDistance(a, b) {
@@ -61,30 +62,45 @@
       const p1 = path[(i + 1) % length];
 
       if (i === activeIndex) {
-        // Past/current segment: the visible trail must end exactly at the live dot.
-        segments.push({
-          start: p0,
-          end: livePoint,
-          alpha: frac <= 1e-6 ? 0 : trailAlphaAtMidpoint(i + frac * 0.5, wrappedProgress, length),
-        });
-
-        // Future side starts at the dot but is fully hidden so the trail never
-        // visually extends beyond the object.
-        segments.push({
-          start: livePoint,
-          end: p1,
-          alpha: 0,
-        });
+        // The visible trail head is the actual moving dot, not the nearest path node.
+        if (frac > 1e-6) {
+          segments.push({
+            start: p0,
+            end: livePoint,
+            alpha: trailAlphaAtMidpoint(i + frac * 0.5, wrappedProgress, length),
+          });
+        }
       } else {
-        segments.push({
-          start: p0,
-          end: p1,
-          alpha: trailAlphaAtMidpoint(i + 0.5, wrappedProgress, length),
-        });
+        const alpha = trailAlphaAtMidpoint(i + 0.5, wrappedProgress, length);
+        if (alpha > 0) {
+          segments.push({ start: p0, end: p1, alpha });
+        }
       }
     }
 
     return segments;
+  }
+
+  function clearTrailSegments(refKey) {
+    const existing = state.refs[refKey] || [];
+    for (const entity of existing) {
+      viewer.entities.remove(entity);
+    }
+    state.refs[refKey] = [];
+  }
+
+  function addTrailSegment(refKey, segment, color) {
+    const entity = viewer.entities.add({
+      name: `${refKey} live segment`,
+      polyline: {
+        positions: pathToCartesianPair(segment.start, segment.end),
+        width: 2.7,
+        material: new Cesium.ColorMaterialProperty(color.withAlpha(segment.alpha)),
+        clampToGround: false,
+        arcType: Cesium.ArcType.NONE,
+      },
+    });
+    state.refs[refKey].push(entity);
   }
 
   function updateLiveTrailSegments(path, progress, currentPosition, refKey, color) {
@@ -92,17 +108,12 @@
     if (length < 2) return;
 
     const displaySegments = buildLiveTrailSegments(path, progress, currentPosition);
-    const segments = ensureTrailSegments(refKey, displaySegments.length, color);
 
-    for (let i = 0; i < displaySegments.length; i += 1) {
-      const segment = displaySegments[i];
-      segments[i].polyline.positions = new Cesium.ConstantProperty(
-        pathToCartesianPair(segment.start, segment.end),
-      );
-      segments[i].polyline.material = new Cesium.ColorMaterialProperty(
-        color.withAlpha(segment.alpha),
-      );
-      segments[i].show = segment.alpha > 0;
+    // Rebuild instead of mutating ConstantProperty values. This is heavier, but it
+    // guarantees Cesium redraws the trail continuously while the dots interpolate.
+    clearTrailSegments(refKey);
+    for (const segment of displaySegments) {
+      addTrailSegment(refKey, segment, color);
     }
   }
 
