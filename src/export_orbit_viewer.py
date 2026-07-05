@@ -35,7 +35,13 @@ VELOCITY_TRIPLES = [
     ("rel_vel_x", "rel_vel_y", "rel_vel_z"),
     ("rel_vel_r", "rel_vel_t", "rel_vel_n"),
 ]
-MISS_DISTANCE_COLUMNS = ["miss_distance", "miss_distance_km", "miss_distance_m", "minimum_distance", "distance_at_tca"]
+MISS_DISTANCE_COLUMNS = [
+    "miss_distance",
+    "miss_distance_km",
+    "miss_distance_m",
+    "minimum_distance",
+    "distance_at_tca",
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -147,7 +153,12 @@ def orbit_path(radius: float, inc_deg: float, raan_deg: float, points: int) -> l
 
 def reference_frame(event_id: str, time_to_tca: float | None) -> dict:
     rng = np.random.default_rng(stable_seed(event_id))
-    altitude = float(rng.choice([550.0, 700.0, 900.0, 1200.0, 20000.0, 35786.0], p=[0.35, 0.25, 0.15, 0.10, 0.05, 0.10]))
+    altitude = float(
+        rng.choice(
+            [550.0, 700.0, 900.0, 1200.0, 20000.0, 35786.0],
+            p=[0.35, 0.25, 0.15, 0.10, 0.05, 0.10],
+        )
+    )
     inc = float(rng.uniform(0.0, 98.0))
     raan = float(rng.uniform(0.0, 360.0))
     phase = float(rng.uniform(0.0, 360.0))
@@ -208,20 +219,15 @@ def relative_geometry(row: pd.Series, columns, points: int) -> dict:
     shown_rel = rel * scale
     secondary = target + shown_rel
 
-    vel_raw = read_vector(row, vel_triple)
-    if vel_raw is not None:
-        vel = np.asarray(km_relative(vel_raw))
-        vel = vel[0] * radial + vel[1] * along + vel[2] * cross
+    # Keep the secondary path smooth and readable. Earlier versions added a display-only
+    # velocity drift term, which could make the secondary path look kinked or jagged when
+    # relative-velocity units were ambiguous. The viewer now shows a stable offset path
+    # and preserves velocity columns only as provenance metadata.
+    if vel_triple is not None and read_vector(row, vel_triple) is not None:
         source_columns["relative_velocity"] = list(vel_triple)
-    else:
-        vel = along * 0.02 + cross * 0.01
 
     target_path = orbit_path(frame["radius"], frame["inc"], frame["raan"], points)
-    half = max((points - 1) / 2.0, 1.0)
-    secondary_path = []
-    for index, point in enumerate(target_path):
-        drift = (index - half) / half
-        secondary_path.append((np.asarray(point) + shown_rel + vel * drift * 600.0).round(6).tolist())
+    secondary_path = [(np.asarray(point) + shown_rel).round(6).tolist() for point in target_path]
 
     return {
         "mode": mode,
@@ -234,7 +240,11 @@ def relative_geometry(row: pd.Series, columns, points: int) -> dict:
         "relative_distance_km": round(norm(rel_km), 6),
         "display_relative_scale": scale,
         "display_relative_distance_km": round(norm(shown_rel), 6),
-        "reference_orbit": {"altitude_km": round(frame["altitude"], 3), "inclination_deg": round(frame["inc"], 3), "raan_deg": round(frame["raan"], 3)},
+        "reference_orbit": {
+            "altitude_km": round(frame["altitude"], 3),
+            "inclination_deg": round(frame["inc"], 3),
+            "raan_deg": round(frame["raan"], 3),
+        },
         "source_columns": source_columns,
     }
 
@@ -360,7 +370,7 @@ def build_payload(df: pd.DataFrame, max_events: int, points: int) -> dict:
             "horizon_order": HORIZONS,
             "geometry_modes": modes,
             "coordinate_note": "Absolute position columns are used when available. Otherwise relative-state or miss-distance columns are displayed in a deterministic reference orbit for physically grounded interpretation, not operational propagation.",
-            "display_scale_note": "Very small separations may be scaled for visibility; original relative_distance_km is preserved.",
+            "display_scale_note": "Very small separations may be scaled for visibility; original relative_distance_km is preserved. Secondary paths are displayed as smooth offset paths to avoid implying precise propagation from ambiguous relative-velocity units.",
         },
         "events": events,
     }
