@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from preprocess import (
     build_post_tca_diagnostics,
@@ -60,4 +61,4 @@ def test_post_tca_diagnostics_count_selected_post_tca_rows() -> None:
     assert row["post_tca_rows"] == 1
     assert row["fallback_rows"] == 1
     assert row["events_without_pre_tca"] == 1
-    assert row["percent_post_tca_rows"] == 100 / 3
+    assert row["percent_post_tca_rows"] == pytest.approx(100 / 3)
