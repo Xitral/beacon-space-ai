@@ -86,7 +86,7 @@ BEACON includes a true Bayesian logistic regression baseline using a Gaussian pr
 
 For uncertainty estimation, BEACON trains a bootstrap ensemble of gradient boosting models. Predictive standard deviation across ensemble members is used as an uncertainty score. This method is **Bayesian-inspired** because it estimates uncertainty through model disagreement rather than full posterior inference over the gradient boosting model.
 
-To address split sensitivity in the rare-event setting, BEACON also runs repeated event-level splits and reports mean and standard deviation across splits.
+To address split sensitivity in the rare-event setting, BEACON also runs repeated event-level splits and reports mean and standard deviation across splits. The figure pipeline generates repeated-split robustness plots for PR-AUC, top-5% recall, and 10% escalation policies.
 
 ## Evaluation Metrics
 
@@ -247,6 +247,9 @@ trustworthy-space-ai/
     uncertainty_positive_vs_negative.png
     positive_escalation_rate.png
     uncertainty_abstention_coverage.png
+    repeated_split_pr_auc.png
+    repeated_split_top5_recall.png
+    repeated_split_escalation_10pct.png
 ```
 
 Some generated files may be excluded from version control depending on repository settings and data-size constraints. The pipeline is designed to regenerate processed data, results, and figures from the raw dataset.
@@ -292,6 +295,9 @@ Figures:
 - `figures/uncertainty_positive_vs_negative.png`
 - `figures/positive_escalation_rate.png`
 - `figures/uncertainty_abstention_coverage.png`
+- `figures/repeated_split_pr_auc.png`
+- `figures/repeated_split_top5_recall.png`
+- `figures/repeated_split_escalation_10pct.png`
 
 ## Current Findings
 
@@ -352,6 +358,7 @@ Current status:
 - bootstrap uncertainty estimation implemented
 - uncertainty escalation analysis implemented
 - repeated split robustness evaluation implemented
+- repeated split robustness figures implemented
 - figure generation implemented
 - technical report draft updated with repeated split results
 - one-command reproducibility pipeline added
