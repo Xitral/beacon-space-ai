@@ -17,6 +17,16 @@
     <select id="eventSelect"></select>
     <label for="horizonSelect">Prediction horizon</label>
     <select id="horizonSelect"></select>
+    <div class="toggle-grid">
+      <label class="toggle-row" for="trackToggle">
+        <input id="trackToggle" type="checkbox" checked />
+        <span>Track selected event</span>
+      </label>
+      <label class="toggle-row" for="smoothToggle">
+        <input id="smoothToggle" type="checkbox" checked />
+        <span>Smooth horizon interpolation</span>
+      </label>
+    </div>
     <div class="button-row">
       <button id="playButton" type="button">Play horizons</button>
       <button id="homeButton" type="button">Focus event</button>
