@@ -8,7 +8,7 @@
   const originalApplyLabelFade = applyLabelFade;
   const trails = { targetTrailSegments: null, secondaryTrailSegments: null };
   const labelState = { target: 1, current: 1 };
-  const ui = { ready: false, scrubActive: false };
+  const ui = { ready: false, scrubActive: false, scrubValue: null, lastEventIndex: null };
 
   function d2(a, b) {
     return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
@@ -49,14 +49,26 @@
     return Cesium.Color.lerp(base, warm, clamp(amount, 0, 1), new Cesium.Color());
   }
 
-  function trailAlpha(mid, progress, n) {
-    const behind = wrapIndex(progress - mid, n);
+  function directionFor(refKey) {
+    const progressKey = refKey === "secondaryTrailSegments" ? "_secondary_path_progress" : "_target_path_progress";
+    const event = currentEvent?.();
+    const snapshots = event?.snapshots || [];
+    for (let i = 1; i < snapshots.length; i += 1) {
+      const a = Number(snapshots[i - 1]?.geometry?.[progressKey]);
+      const b = Number(snapshots[i]?.geometry?.[progressKey]);
+      if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(b - a) > 0.001) return Math.sign(b - a);
+    }
+    return 1;
+  }
+
+  function trailAlpha(mid, progress, n, direction) {
+    const behind = direction >= 0 ? wrapIndex(progress - mid, n) : wrapIndex(mid - progress, n);
     const raw = 1 - behind / n;
     const eased = Math.pow(clamp(raw, 0, 1), 1.55);
     return eased < 0.015 ? TAIL : clamp(eased * HEAD, TAIL, HEAD);
   }
 
-  function segmentList(path, progress, point, heat) {
+  function segmentList(path, progress, point, heat, direction) {
     const n = effectivePathLength(path);
     if (n < 2) return [];
     const live = closestProgress(path, point, progress);
@@ -69,11 +81,17 @@
       const a = path[i];
       const b = path[(i + 1) % n];
       if (i === active) {
-        const alpha = frac > 1e-6 ? trailAlpha(i + frac * 0.5, wrapped, n) : 0;
-        out.push({ a, b: frac > 1e-6 ? dot : a, alpha, heat: heat * alpha });
-        out.push({ a: dot, b, alpha: frac < 1 - 1e-6 ? FUTURE : 0, heat: heat * 0.15 });
+        if (direction >= 0) {
+          const alpha = frac > 1e-6 ? trailAlpha(i + frac * 0.5, wrapped, n, direction) : 0;
+          out.push({ a, b: frac > 1e-6 ? dot : a, alpha, heat: heat * alpha });
+          out.push({ a: dot, b, alpha: frac < 1 - 1e-6 ? FUTURE : 0, heat: heat * 0.15 });
+        } else {
+          const alpha = frac < 1 - 1e-6 ? trailAlpha(i + frac + (1 - frac) * 0.5, wrapped, n, direction) : 0;
+          out.push({ a: dot, b, alpha, heat: heat * alpha });
+          out.push({ a, b: frac > 1e-6 ? dot : a, alpha: frac > 1e-6 ? FUTURE : 0, heat: heat * 0.15 });
+        }
       } else {
-        const alpha = trailAlpha(i + 0.5, wrapped, n);
+        const alpha = trailAlpha(i + 0.5, wrapped, n, direction);
         out.push({ a, b, alpha, heat: heat * alpha });
       }
     }
@@ -104,7 +122,7 @@
   }
 
   function syncTrail(path, progress, point, refKey, color, heat = 0) {
-    const parts = segmentList(path, progress, point, heat);
+    const parts = segmentList(path, progress, point, heat, directionFor(refKey));
     const data = ensureTrail(refKey, color, parts.length);
     for (let i = 0; i < parts.length; i += 1) {
       const c = blendColor(color, heat, parts[i].heat).withAlpha(parts[i].alpha);
@@ -116,9 +134,9 @@
 
   function ensureResearchEntities() {
     if (state.refs.researchTargetUncertainty) return;
-    state.refs.researchTargetUncertainty = viewer.entities.add({ position: Cesium.Cartesian3.ZERO, ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), material: TARGET_COLOR.withAlpha(0.10), outline: true, outlineColor: TARGET_COLOR.withAlpha(0.28) } });
-    state.refs.researchSecondaryUncertainty = viewer.entities.add({ position: Cesium.Cartesian3.ZERO, ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), material: SECONDARY_COLOR.withAlpha(0.10), outline: true, outlineColor: SECONDARY_COLOR.withAlpha(0.28) } });
-    state.refs.researchTcaVolume = viewer.entities.add({ position: Cesium.Cartesian3.ZERO, ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), material: SEPARATION_COLOR.withAlpha(0.075), outline: true, outlineColor: SEPARATION_COLOR.withAlpha(0.28) } });
+    state.refs.researchTargetUncertainty = viewer.entities.add({ position: Cesium.Cartesian3.ZERO, ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), material: TARGET_COLOR.withAlpha(0.15), outline: true, outlineColor: TARGET_COLOR.withAlpha(0.36) } });
+    state.refs.researchSecondaryUncertainty = viewer.entities.add({ position: Cesium.Cartesian3.ZERO, ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), material: SECONDARY_COLOR.withAlpha(0.15), outline: true, outlineColor: SECONDARY_COLOR.withAlpha(0.36) } });
+    state.refs.researchTcaVolume = viewer.entities.add({ position: Cesium.Cartesian3.ZERO, ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), material: SEPARATION_COLOR.withAlpha(0.12), outline: true, outlineColor: SEPARATION_COLOR.withAlpha(0.42) } });
   }
 
   function syncResearchEntities(snapshot) {
@@ -128,15 +146,13 @@
     const u = Number(snapshot.predictive_std) || 0.04;
     const days = Math.max(0, Number(snapshot.time_to_tca_days) || 0);
     const rel = Math.max(1, Number(g.display_relative_distance_km || g.relative_distance_km) || 1);
-    const radiusKm = clamp(35 + u * 900 + days * 10 + rel * 0.05, 30, 1800);
-    const r1 = new Cesium.Cartesian3(radiusKm * 1000, radiusKm * 700, radiusKm * 460);
-    const r2 = new Cesium.Cartesian3(radiusKm * 850, radiusKm * 650, radiusKm * 520);
+    const radiusKm = clamp(55 + u * 1100 + days * 18 + rel * 0.08, 45, 2400);
     const mid = lerpPoint(g.target_position_km, g.secondary_position_km, 0.5);
-    const corridorKm = clamp(rel * 0.65 + radiusKm * 0.55, 60, 3200);
+    const corridorKm = clamp(rel * 0.8 + radiusKm * 0.7, 90, 4200);
     state.refs.researchTargetUncertainty.position = new Cesium.ConstantPositionProperty(kmToCartesian(g.target_position_km));
-    state.refs.researchTargetUncertainty.ellipsoid.radii = r1;
+    state.refs.researchTargetUncertainty.ellipsoid.radii = new Cesium.Cartesian3(radiusKm * 1000, radiusKm * 720, radiusKm * 480);
     state.refs.researchSecondaryUncertainty.position = new Cesium.ConstantPositionProperty(kmToCartesian(g.secondary_position_km));
-    state.refs.researchSecondaryUncertainty.ellipsoid.radii = r2;
+    state.refs.researchSecondaryUncertainty.ellipsoid.radii = new Cesium.Cartesian3(radiusKm * 850, radiusKm * 660, radiusKm * 560);
     state.refs.researchTcaVolume.position = new Cesium.ConstantPositionProperty(kmToCartesian(mid));
     state.refs.researchTcaVolume.ellipsoid.radii = new Cesium.Cartesian3(corridorKm * 1000, corridorKm * 1000, corridorKm * 1000);
   }
@@ -144,12 +160,8 @@
   function syncSeparation(snapshot) {
     const g = snapshot?.geometry;
     if (!g || !state.refs.separation) return;
-    if (!state.refs.separationLivePositions) {
-      state.refs.separationLivePositions = [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO];
-      state.refs.separation.polyline.positions = new Cesium.CallbackProperty(() => state.refs.separationLivePositions, false);
-      state.refs.separation.polyline.material = new Cesium.ColorMaterialProperty(SEPARATION_COLOR);
-    }
-    state.refs.separationLivePositions = [kmToCartesian(g.target_position_km), kmToCartesian(g.secondary_position_km)];
+    state.refs.separation.polyline.positions = new Cesium.ConstantProperty([kmToCartesian(g.target_position_km), kmToCartesian(g.secondary_position_km)]);
+    state.refs.separation.polyline.material = new Cesium.ColorMaterialProperty(SEPARATION_COLOR);
   }
 
   function syncAll(snapshot) {
@@ -169,11 +181,13 @@
     const style = document.createElement("style");
     style.id = "researchFeatureStyles";
     style.textContent = `
-      #researchDock{position:fixed;left:18px;top:18px;width:330px;max-height:calc(100vh - 36px);overflow:auto;z-index:5;color:#eef6ff;font-family:Inter,system-ui,sans-serif;pointer-events:auto}
-      #researchDock .card{background:rgba(8,15,28,.78);border:1px solid rgba(126,177,255,.22);box-shadow:0 18px 50px rgba(0,0,0,.28);backdrop-filter:blur(14px);border-radius:16px;padding:12px 14px;margin-bottom:10px}
+      #researchDock{position:fixed;right:18px;top:18px;width:350px;max-height:calc(100vh - 138px);overflow:auto;z-index:60;color:#eef6ff;font-family:Inter,system-ui,sans-serif;pointer-events:auto}
+      #researchDock .card{background:rgba(8,15,28,.82);border:1px solid rgba(126,177,255,.24);box-shadow:0 18px 50px rgba(0,0,0,.30);backdrop-filter:blur(14px);border-radius:16px;padding:12px 14px;margin-bottom:10px}
       #researchDock h3{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#9ec6ff;margin:0 0 8px}
       #researchDock p,#researchDock li{font-size:12px;line-height:1.35;color:#cfe1ff;margin:4px 0}.research-muted{color:#7f93b7!important}.research-value{font-weight:700;color:#fff}.research-row{display:flex;justify-content:space-between;gap:8px;margin:5px 0}.research-small{font-size:11px;color:#9fb4d7}.research-event{display:block;width:100%;text-align:left;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);color:#eaf3ff;border-radius:10px;padding:7px;margin:5px 0;cursor:pointer}.research-event:hover{background:rgba(87,165,255,.16)}
-      #researchTimeline{position:fixed;left:370px;right:24px;bottom:20px;z-index:5;background:rgba(8,15,28,.74);border:1px solid rgba(126,177,255,.22);border-radius:16px;padding:12px 16px;color:#eef6ff;backdrop-filter:blur(14px);font-family:Inter,system-ui,sans-serif}#researchTimeline input{width:100%}#groundTrack{width:100%;height:140px;border-radius:10px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.08)}.research-slider{width:100%}.research-brief{width:100%;border:0;border-radius:10px;padding:8px;background:#57a5ff;color:#07101f;font-weight:800;cursor:pointer}`;
+      #researchTimeline{position:fixed;left:620px;right:390px;bottom:20px;z-index:61;background:rgba(8,15,28,.82);border:1px solid rgba(126,177,255,.24);border-radius:16px;padding:12px 16px;color:#eef6ff;backdrop-filter:blur(14px);font-family:Inter,system-ui,sans-serif}#researchTimeline input{width:100%}#groundTrack{width:100%;height:140px;border-radius:10px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.08)}.research-slider{width:100%}.research-brief{width:100%;border:0;border-radius:10px;padding:8px;background:#57a5ff;color:#07101f;font-weight:800;cursor:pointer}.research-feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.research-feature{font-size:11px;padding:6px;border-radius:9px;background:rgba(87,165,255,.10);border:1px solid rgba(87,165,255,.16)}
+      @media(max-width:1300px){#researchDock{width:310px;right:12px}#researchTimeline{left:590px;right:335px}}
+      @media(max-width:1050px){#researchDock{display:none}#researchTimeline{left:24px;right:24px}}`;
     document.head.appendChild(style);
   }
 
@@ -183,20 +197,23 @@
     const dock = document.createElement("div");
     dock.id = "researchDock";
     dock.innerHTML = `
+      <div class="card"><h3>Research Features Active</h3><div class="research-feature-grid"><span class="research-feature">Uncertainty volumes</span><span class="research-feature">TCA volume</span><span class="research-feature">Heat gradient trail</span><span class="research-feature">Ground track</span><span class="research-feature">Triage queue</span><span class="research-feature">Threshold sandbox</span></div></div>
       <div class="card"><h3>Research Triage Queue</h3><div id="researchEventList"></div></div>
       <div class="card"><h3>Model-Grounded Triage</h3><div id="triageSummary"></div><p class="research-muted">Research-only classification for explainable conjunction-risk triage. Not an operational maneuver recommendation.</p></div>
       <div class="card"><h3>What Changed?</h3><div id="changePanel"></div></div>
       <div class="card"><h3>Threshold Sensitivity</h3><label class="research-small">Risk log10 cutoff <span id="riskCutLabel"></span></label><input id="riskCut" class="research-slider" type="range" min="-8" max="-3" step="0.1" value="-5.5"><label class="research-small">Uncertainty cutoff <span id="uncCutLabel"></span></label><input id="uncCut" class="research-slider" type="range" min="0" max="0.3" step="0.01" value="0.10"><label class="research-small">Confidence cutoff <span id="confCutLabel"></span></label><input id="confCut" class="research-slider" type="range" min="0" max="1" step="0.05" value="0.50"><div id="sensitivityOut"></div></div>
-      <div class="card"><h3>Ground-Track Mini Map</h3><canvas id="groundTrack" width="300" height="140"></canvas></div>
-      <div class="card"><h3>Exportable Mission Brief</h3><button id="briefButton" class="research-brief">Export Research Brief</button></div>`;
+      <div class="card"><h3>Ground-Track Mini Map</h3><canvas id="groundTrack" width="316" height="140"></canvas></div>
+      <div class="card"><h3>Exportable Research Brief</h3><button id="briefButton" class="research-brief">Export Research Brief</button></div>`;
     document.body.appendChild(dock);
     const timeline = document.createElement("div");
     timeline.id = "researchTimeline";
     timeline.innerHTML = `<div class="research-row"><span class="research-value">Research Timeline Scrubber</span><span id="timelineLabel" class="research-small"></span></div><input id="researchScrubber" type="range" min="0" max="3" step="0.001" value="0"><div id="timelineTicks" class="research-small"></div>`;
     document.body.appendChild(timeline);
-    document.getElementById("researchScrubber").addEventListener("input", handleScrub);
-    document.getElementById("researchScrubber").addEventListener("pointerdown", () => { ui.scrubActive = true; });
-    document.getElementById("researchScrubber").addEventListener("pointerup", () => { ui.scrubActive = false; });
+    const scrub = document.getElementById("researchScrubber");
+    scrub.addEventListener("input", handleScrub);
+    scrub.addEventListener("pointerdown", () => { ui.scrubActive = true; });
+    scrub.addEventListener("pointerup", () => { ui.scrubActive = false; ui.scrubValue = Number(scrub.value); });
+    scrub.addEventListener("change", () => { ui.scrubValue = Number(scrub.value); });
     document.getElementById("briefButton").addEventListener("click", exportBrief);
     for (const id of ["riskCut", "uncCut", "confCut"]) document.getElementById(id).addEventListener("input", updateResearchUi);
     ui.ready = true;
@@ -214,7 +231,9 @@
   }
 
   function handleScrub(e) {
-    const snapshot = interpAt(Number(e.target.value));
+    ui.scrubActive = true;
+    ui.scrubValue = Number(e.target.value);
+    const snapshot = interpAt(ui.scrubValue);
     if (snapshot) renderSnapshot(snapshot, false);
   }
 
@@ -248,7 +267,7 @@
       const button = document.createElement("button");
       button.className = "research-event";
       button.innerHTML = `<b>${event.display_name || event.event_id}</b><br><span class="research-small">max log10 risk ${Number.isFinite(score) ? score.toFixed(2) : "—"}</span>`;
-      button.addEventListener("click", () => setEvent(index));
+      button.addEventListener("click", () => { ui.scrubValue = null; setEvent(index); });
       el.appendChild(button);
     });
   }
@@ -257,7 +276,7 @@
     const el = document.getElementById("changePanel");
     if (!el) return;
     const event = currentEvent();
-    const idx = Math.max(0, state.horizonIndex || 0);
+    const idx = Math.max(0, Math.round(ui.scrubValue ?? state.horizonIndex ?? 0));
     const prev = event.snapshots[Math.max(0, idx - 1)] || snapshot;
     const dr = (Number(snapshot.current_risk_log10) || 0) - (Number(prev.current_risk_log10) || 0);
     const du = (Number(snapshot.predictive_std) || 0) - (Number(prev.predictive_std) || 0);
@@ -302,10 +321,12 @@
     const label = document.getElementById("timelineLabel");
     const ticks = document.getElementById("timelineTicks");
     if (!slider || !state.data) return;
+    if (ui.lastEventIndex !== state.eventIndex) { ui.scrubValue = null; ui.lastEventIndex = state.eventIndex; }
     const snaps = currentEvent().snapshots;
     slider.max = String(Math.max(0, snaps.length - 1));
-    if (!ui.scrubActive) slider.value = String(state.horizonIndex || 0);
-    if (label) label.textContent = snapshot?.horizon || "interpolated";
+    const value = ui.scrubValue !== null ? ui.scrubValue : (state.horizonIndex || 0);
+    slider.value = String(clamp(value, 0, Math.max(0, snaps.length - 1)));
+    if (label) label.textContent = ui.scrubValue !== null ? "interpolated" : (snapshot?.horizon || "interpolated");
     if (ticks) ticks.textContent = snaps.map((s, i) => `${i}: ${s.horizon}`).join("   ");
   }
 
