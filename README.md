@@ -1,14 +1,28 @@
 # BEACON
 
 [![CI](https://github.com/Xitral/beacon-space-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Xitral/beacon-space-ai/actions/workflows/ci.yml)
+[![LaTeX Paper](https://github.com/Xitral/beacon-space-ai/actions/workflows/latex.yml/badge.svg)](https://github.com/Xitral/beacon-space-ai/actions/workflows/latex.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21209120.svg)](https://doi.org/10.5281/zenodo.21209120)
 ![Python](https://img.shields.io/badge/python-3.10-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-research%20prototype-orange)
-![Release](https://img.shields.io/badge/release-v0.1.0-purple)
+![Release](https://img.shields.io/badge/release-v0.2.1-purple)
 
 **BEACON (Bayesian Event Assessment for Conjunction Observation and Notification)** is a reproducible research project for calibrated, uncertainty-aware satellite conjunction triage using public CDM data.
 
 BEACON is a research prototype only. It is not an operational collision-avoidance or space-safety system.
+
+## Citation and Archived Release
+
+The manuscript-ready BEACON research artifact is archived on Zenodo:
+
+```text
+DOI: 10.5281/zenodo.21209120
+Version: v0.2.1
+Repository: https://github.com/Xitral/beacon-space-ai
+```
+
+If you use BEACON, cite the archived software artifact using the DOI above and also cite the original public dataset provider.
 
 ## What BEACON Studies
 
@@ -157,6 +171,8 @@ pdflatex main.tex
 pdflatex main.tex
 ```
 
+The repository also includes a GitHub Actions workflow that builds the LaTeX manuscript and uploads `main.pdf` as an artifact.
+
 ## Repository Structure
 
 ```text
@@ -171,6 +187,7 @@ beacon-space-ai/
   .github/
     workflows/
       ci.yml
+      latex.yml
 
   docs/
     experiment_plan.md
@@ -276,6 +293,8 @@ Current status:
 - current-risk feature ablation implemented
 - synthetic test suite and CI implemented
 - manuscript converted to LaTeX
+- LaTeX paper build workflow implemented
+- archived Zenodo DOI available
 
 ## Limitations
 
