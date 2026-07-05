@@ -1,9 +1,10 @@
 // Live trail alignment patch for the Cesium viewer.
 //
-// app.js owns the viewer state and scene entities. This companion script replaces
-// the trail renderer with one that projects the live moving object position onto
-// the current interpolated orbit path every frame. It also hooks renderSnapshot
-// directly so the trails are corrected immediately after the dots move.
+// This renderer keeps the visible trail head locked to the live object dot by
+// splitting the active orbit segment at the current interpolated position. It is
+// intentionally event-driven only: app.js calls updateTrailSegments every time a
+// prediction-horizon interpolation frame is drawn, so no preRender entity churn is
+// needed.
 
 (function patchLiveOrbitTrails() {
   function squaredDistance(a, b) {
@@ -41,7 +42,7 @@
   function trailAlphaAtMidpoint(midpoint, progress, length) {
     const behindDistance = wrapIndex(progress - midpoint, length);
     const raw = 1 - behindDistance / length;
-    const eased = Math.pow(clamp(raw, 0, 1), 1.8);
+    const eased = Math.pow(clamp(raw, 0, 1), 1.7);
     return eased < 0.025 ? 0 : clamp(eased, 0, 0.96);
   }
 
@@ -61,7 +62,7 @@
       const p1 = path[(i + 1) % length];
 
       if (i === activeIndex) {
-        // The visible trail head is the actual moving dot, not the nearest path node.
+        // Segment behind the object: terminate exactly at the dot.
         if (frac > 1e-6) {
           segments.push({
             start: p0,
@@ -69,37 +70,50 @@
             alpha: trailAlphaAtMidpoint(i + frac * 0.5, wrappedProgress, length),
           });
         }
+
+        // Segment ahead of the object: begin exactly at the dot, but keep it
+        // mostly transparent so the direction of travel is still readable.
+        if (frac < 1 - 1e-6) {
+          segments.push({
+            start: livePoint,
+            end: p1,
+            alpha: 0.04,
+          });
+        }
       } else {
         const alpha = trailAlphaAtMidpoint(i + 0.5, wrappedProgress, length);
-        if (alpha > 0) {
-          segments.push({ start: p0, end: p1, alpha });
-        }
+        segments.push({ start: p0, end: p1, alpha });
       }
     }
 
     return segments;
   }
 
-  function clearTrailSegments(refKey) {
-    const existing = state.refs[refKey] || [];
-    for (const entity of existing) {
-      viewer.entities.remove(entity);
-    }
-    state.refs[refKey] = [];
-  }
-
-  function addTrailSegment(refKey, segment, color) {
+  function makeSegmentEntity(refKey, color) {
     const entity = viewer.entities.add({
       name: `${refKey} live segment`,
       polyline: {
-        positions: pathToCartesianPair(segment.start, segment.end),
+        positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
         width: 2.7,
-        material: new Cesium.ColorMaterialProperty(color.withAlpha(segment.alpha)),
+        material: new Cesium.ColorMaterialProperty(color.withAlpha(0)),
         clampToGround: false,
         arcType: Cesium.ArcType.NONE,
       },
     });
     state.refs[refKey].push(entity);
+    return entity;
+  }
+
+  function ensureLiveTrailSegments(refKey, count, color) {
+    if (!state.refs[refKey]) state.refs[refKey] = [];
+    while (state.refs[refKey].length < count) {
+      makeSegmentEntity(refKey, color);
+    }
+    while (state.refs[refKey].length > count) {
+      const entity = state.refs[refKey].pop();
+      viewer.entities.remove(entity);
+    }
+    return state.refs[refKey];
   }
 
   function updateLiveTrailSegments(path, progress, currentPosition, refKey, color) {
@@ -107,51 +121,17 @@
     if (length < 2) return;
 
     const displaySegments = buildLiveTrailSegments(path, progress, currentPosition);
+    const entities = ensureLiveTrailSegments(refKey, displaySegments.length, color);
 
-    // Rebuild instead of mutating ConstantProperty values. This is heavier, but it
-    // guarantees Cesium redraws the trail continuously while the dots interpolate.
-    clearTrailSegments(refKey);
-    for (const segment of displaySegments) {
-      addTrailSegment(refKey, segment, color);
+    for (let i = 0; i < displaySegments.length; i += 1) {
+      const segment = displaySegments[i];
+      entities[i].polyline.positions = pathToCartesianPair(segment.start, segment.end);
+      entities[i].polyline.material = new Cesium.ColorMaterialProperty(color.withAlpha(segment.alpha));
+      entities[i].show = segment.alpha > 0.01;
     }
-  }
-
-  function syncLiveTrails(snapshot) {
-    if (!snapshot || !snapshot.geometry) return;
-    const geometry = snapshot.geometry;
-
-    updateLiveTrailSegments(
-      geometry.target_orbit_km,
-      geometry._target_path_progress ?? closestPathIndex(geometry.target_orbit_km, geometry.target_position_km),
-      geometry.target_position_km,
-      "targetTrailSegments",
-      TARGET_COLOR,
-    );
-    updateLiveTrailSegments(
-      geometry.secondary_orbit_km,
-      geometry._secondary_path_progress ?? closestPathIndex(geometry.secondary_orbit_km, geometry.secondary_position_km),
-      geometry.secondary_position_km,
-      "secondaryTrailSegments",
-      SECONDARY_COLOR,
-    );
-
     viewer.scene.requestRender();
   }
 
   updateTrailSegments = updateLiveTrailSegments;
-
-  // Belt-and-suspenders: make sure every animation frame corrects the trail after
-  // app.js moves the dots. This avoids the old static path staying visible during
-  // prediction-horizon interpolation on some Cesium/browser combinations.
-  const originalRenderSnapshot = renderSnapshot;
-  renderSnapshot = function patchedRenderSnapshot(snapshot, track = false) {
-    originalRenderSnapshot(snapshot, track);
-    syncLiveTrails(snapshot);
-  };
-
-  viewer.scene.preRender.addEventListener(() => {
-    syncLiveTrails(state.displaySnapshot);
-  });
-
   window.__BEACON_LIVE_TRAILS_PATCHED__ = true;
 })();
