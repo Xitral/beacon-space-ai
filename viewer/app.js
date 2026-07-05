@@ -1,9 +1,12 @@
 const DATA_URL = "data/conjunction_events.json";
 
+const EARTH_RADIUS_M = 6_371_000;
 const TARGET_COLOR = Cesium.Color.fromCssColorString("#57a5ff");
 const SECONDARY_COLOR = Cesium.Color.fromCssColorString("#ffb84d");
 const SEPARATION_COLOR = Cesium.Color.fromCssColorString("#ff5b6e");
 const CA_COLOR = Cesium.Color.fromCssColorString("#ffffff");
+const EARTH_COLOR = Cesium.Color.fromCssColorString("#163f7a");
+const ATMOSPHERE_COLOR = Cesium.Color.fromCssColorString("#6eb6ff").withAlpha(0.10);
 
 const SAMPLE_DATA = {
   metadata: {
@@ -33,6 +36,7 @@ function makeSampleSnapshot(horizon, timeToTca, risk, modelProbability, predicti
   const radius = 7071;
   const targetOrbit = [];
   const secondaryOrbit = [];
+
   for (let i = 0; i < 144; i += 1) {
     const theta = (i / 143) * Math.PI * 2;
     const x = radius * Math.cos(theta);
@@ -41,8 +45,10 @@ function makeSampleSnapshot(horizon, timeToTca, risk, modelProbability, predicti
     targetOrbit.push([x, y, z]);
     secondaryOrbit.push([x + 55 + phaseShift, y - 80, z + 120]);
   }
+
   const p = targetOrbit[30 + Math.floor(phaseShift / 5)];
   const q = secondaryOrbit[30 + Math.floor(phaseShift / 5)];
+
   return {
     horizon,
     time_to_tca_days: timeToTca,
@@ -74,11 +80,14 @@ const viewer = new Cesium.Viewer("cesiumContainer", {
   navigationHelpButton: false,
   infoBox: false,
   selectionIndicator: false,
+  skyAtmosphere: false,
 });
 
-viewer.scene.globe.enableLighting = true;
-viewer.scene.globe.depthTestAgainstTerrain = false;
-viewer.scene.screenSpaceCameraController.minimumZoomDistance = 2_000_000;
+// The default Cesium globe can appear black or fail without an imagery token/source.
+// Hide it and draw a local reference Earth so the viewer is reliable offline.
+viewer.scene.globe.show = false;
+viewer.scene.moon.show = false;
+viewer.scene.screenSpaceCameraController.minimumZoomDistance = 450_000;
 viewer.scene.screenSpaceCameraController.maximumZoomDistance = 90_000_000;
 
 const state = {
@@ -86,7 +95,7 @@ const state = {
   eventIndex: 0,
   horizonIndex: 0,
   playTimer: null,
-  entities: [],
+  refs: {},
 };
 
 const eventSelect = document.getElementById("eventSelect");
@@ -118,23 +127,17 @@ function formatPercent(value) {
 
 function riskColor(snapshot) {
   const risk = snapshot.current_risk_log10;
+
   if (risk !== null && risk !== undefined) {
     if (risk >= -5) return Cesium.Color.RED;
     if (risk >= -6) return Cesium.Color.ORANGE;
   }
-  if (snapshot.model_probability !== null && snapshot.model_probability > 0.5) return Cesium.Color.ORANGE;
+
+  if (snapshot.model_probability !== null && snapshot.model_probability > 0.5) {
+    return Cesium.Color.ORANGE;
+  }
+
   return TARGET_COLOR;
-}
-
-function clearEntities() {
-  state.entities.forEach((entity) => viewer.entities.remove(entity));
-  state.entities = [];
-}
-
-function addEntity(options) {
-  const entity = viewer.entities.add(options);
-  state.entities.push(entity);
-  return entity;
 }
 
 function currentEvent() {
@@ -145,14 +148,103 @@ function currentSnapshot() {
   return currentEvent().snapshots[state.horizonIndex];
 }
 
+function ensureSceneEntities() {
+  if (state.refs.targetOrbit) return;
+
+  state.refs.earth = viewer.entities.add({
+    name: "Earth reference sphere",
+    position: Cesium.Cartesian3.ZERO,
+    ellipsoid: {
+      radii: new Cesium.Cartesian3(EARTH_RADIUS_M, EARTH_RADIUS_M, EARTH_RADIUS_M),
+      material: EARTH_COLOR,
+      outline: true,
+      outlineColor: Cesium.Color.fromCssColorString("#6eb6ff").withAlpha(0.35),
+    },
+  });
+
+  state.refs.atmosphere = viewer.entities.add({
+    name: "Atmosphere reference shell",
+    position: Cesium.Cartesian3.ZERO,
+    ellipsoid: {
+      radii: new Cesium.Cartesian3(EARTH_RADIUS_M * 1.025, EARTH_RADIUS_M * 1.025, EARTH_RADIUS_M * 1.025),
+      material: ATMOSPHERE_COLOR,
+    },
+  });
+
+  state.refs.targetOrbit = viewer.entities.add({
+    name: "Target orbit",
+    polyline: {
+      positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
+      width: 2.5,
+      material: TARGET_COLOR.withAlpha(0.82),
+      clampToGround: false,
+    },
+  });
+
+  state.refs.secondaryOrbit = viewer.entities.add({
+    name: "Secondary orbit",
+    polyline: {
+      positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
+      width: 2.5,
+      material: SECONDARY_COLOR.withAlpha(0.88),
+      clampToGround: false,
+    },
+  });
+
+  state.refs.separation = viewer.entities.add({
+    name: "Displayed separation",
+    polyline: {
+      positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
+      width: 3,
+      material: SEPARATION_COLOR,
+    },
+  });
+
+  state.refs.targetObject = viewer.entities.add({
+    name: "Target object",
+    position: Cesium.Cartesian3.ZERO,
+    point: { pixelSize: 11, color: TARGET_COLOR, outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
+    label: {
+      text: "Target",
+      font: "14px sans-serif",
+      pixelOffset: new Cesium.Cartesian2(0, -22),
+      fillColor: Cesium.Color.WHITE,
+      showBackground: true,
+      backgroundColor: Cesium.Color.BLACK.withAlpha(0.45),
+    },
+  });
+
+  state.refs.secondaryObject = viewer.entities.add({
+    name: "Secondary object",
+    position: Cesium.Cartesian3.ZERO,
+    point: { pixelSize: 10, color: SECONDARY_COLOR, outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
+    label: {
+      text: "Secondary",
+      font: "14px sans-serif",
+      pixelOffset: new Cesium.Cartesian2(0, -22),
+      fillColor: Cesium.Color.WHITE,
+      showBackground: true,
+      backgroundColor: Cesium.Color.BLACK.withAlpha(0.45),
+    },
+  });
+
+  state.refs.closestApproach = viewer.entities.add({
+    name: "Closest approach marker",
+    position: Cesium.Cartesian3.ZERO,
+    point: { pixelSize: 8, color: CA_COLOR, outlineColor: SEPARATION_COLOR, outlineWidth: 2 },
+  });
+}
+
 function populateControls() {
   eventSelect.innerHTML = "";
+
   state.data.events.forEach((event, index) => {
     const option = document.createElement("option");
     option.value = String(index);
     option.textContent = `${event.display_name || `Event ${event.event_id}`} ${event.high_risk ? "• high risk" : ""}`;
     eventSelect.appendChild(option);
   });
+
   eventSelect.value = String(state.eventIndex);
   populateHorizonSelect();
 }
@@ -160,12 +252,14 @@ function populateControls() {
 function populateHorizonSelect() {
   const event = currentEvent();
   horizonSelect.innerHTML = "";
+
   event.snapshots.forEach((snapshot, index) => {
     const option = document.createElement("option");
     option.value = String(index);
     option.textContent = snapshot.horizon;
     horizonSelect.appendChild(option);
   });
+
   state.horizonIndex = Math.min(state.horizonIndex, event.snapshots.length - 1);
   horizonSelect.value = String(state.horizonIndex);
 }
@@ -188,89 +282,54 @@ function renderMetrics(event, snapshot) {
   metadataEl.innerHTML = `<h2>Notes</h2><p>${notes}</p>`;
 }
 
-function renderScene(fly = false) {
-  clearEntities();
+function updateEntityGeometry(snapshot) {
+  ensureSceneEntities();
 
-  const event = currentEvent();
-  const snapshot = currentSnapshot();
   const geometry = snapshot.geometry;
   const target = kmToCartesian(geometry.target_position_km);
   const secondary = kmToCartesian(geometry.secondary_position_km);
   const closest = kmToCartesian(geometry.closest_approach_km);
 
-  addEntity({
-    name: "Target orbit",
-    polyline: {
-      positions: pathToCartesian(geometry.target_orbit_km),
-      width: 2.5,
-      material: TARGET_COLOR.withAlpha(0.82),
-      clampToGround: false,
-    },
-  });
+  viewer.entities.suspendEvents();
 
-  addEntity({
-    name: "Secondary orbit",
-    polyline: {
-      positions: pathToCartesian(geometry.secondary_orbit_km),
-      width: 2.5,
-      material: SECONDARY_COLOR.withAlpha(0.88),
-      clampToGround: false,
-    },
-  });
+  state.refs.targetOrbit.polyline.positions = new Cesium.ConstantProperty(pathToCartesian(geometry.target_orbit_km));
+  state.refs.secondaryOrbit.polyline.positions = new Cesium.ConstantProperty(pathToCartesian(geometry.secondary_orbit_km));
+  state.refs.separation.polyline.positions = new Cesium.ConstantProperty([target, secondary]);
 
-  addEntity({
-    name: "Displayed separation",
-    polyline: {
-      positions: [target, secondary],
-      width: 3,
-      material: SEPARATION_COLOR,
-    },
-  });
+  state.refs.targetObject.position = new Cesium.ConstantPositionProperty(target);
+  state.refs.targetObject.point.color = new Cesium.ConstantProperty(riskColor(snapshot));
 
-  addEntity({
-    name: "Target object",
-    position: target,
-    point: { pixelSize: 11, color: riskColor(snapshot), outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
-    label: {
-      text: "Target",
-      font: "14px sans-serif",
-      pixelOffset: new Cesium.Cartesian2(0, -22),
-      fillColor: Cesium.Color.WHITE,
-      showBackground: true,
-      backgroundColor: Cesium.Color.BLACK.withAlpha(0.45),
-    },
-  });
+  state.refs.secondaryObject.position = new Cesium.ConstantPositionProperty(secondary);
+  state.refs.closestApproach.position = new Cesium.ConstantPositionProperty(closest);
 
-  addEntity({
-    name: "Secondary object",
-    position: secondary,
-    point: { pixelSize: 10, color: SECONDARY_COLOR, outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
-    label: {
-      text: "Secondary",
-      font: "14px sans-serif",
-      pixelOffset: new Cesium.Cartesian2(0, -22),
-      fillColor: Cesium.Color.WHITE,
-      showBackground: true,
-      backgroundColor: Cesium.Color.BLACK.withAlpha(0.45),
-    },
-  });
+  viewer.entities.resumeEvents();
+  viewer.scene.requestRender();
+}
 
-  addEntity({
-    name: "Closest approach marker",
-    position: closest,
-    point: { pixelSize: 8, color: CA_COLOR, outlineColor: SEPARATION_COLOR, outlineWidth: 2 },
-  });
+function renderScene(fly = false) {
+  const event = currentEvent();
+  const snapshot = currentSnapshot();
 
+  updateEntityGeometry(snapshot);
   renderMetrics(event, snapshot);
 
   if (fly) focusEvent();
 }
 
 function focusEvent() {
-  if (!state.entities.length) return;
-  viewer.flyTo(state.entities, {
-    duration: 0.8,
-    offset: new Cesium.HeadingPitchRange(0.0, -0.55, 10_000_000),
+  const snapshot = currentSnapshot();
+  const geometry = snapshot.geometry;
+  const target = kmToCartesian(geometry.target_position_km);
+  const secondary = kmToCartesian(geometry.secondary_position_km);
+  const closest = kmToCartesian(geometry.closest_approach_km);
+  const separation = Cesium.Cartesian3.distance(target, secondary);
+  const orbitalRadius = Cesium.Cartesian3.magnitude(closest);
+  const range = Math.max(1_200_000, Math.min(12_000_000, orbitalRadius * 0.18 + separation * 4));
+  const sphere = new Cesium.BoundingSphere(closest, Math.max(150_000, separation));
+
+  viewer.camera.flyToBoundingSphere(sphere, {
+    duration: 0.85,
+    offset: new Cesium.HeadingPitchRange(0.0, -0.65, range),
   });
 }
 
@@ -294,6 +353,7 @@ function togglePlay() {
     playButton.textContent = "Play horizons";
     return;
   }
+
   playButton.textContent = "Pause";
   state.playTimer = setInterval(() => {
     const event = currentEvent();
@@ -318,6 +378,8 @@ loadData().then((data) => {
   if (!state.data.events || state.data.events.length === 0) {
     throw new Error("Viewer dataset contains no events.");
   }
+
+  ensureSceneEntities();
   populateControls();
   renderScene(true);
 });
