@@ -1,12 +1,14 @@
 // Live trail alignment patch for the Cesium viewer.
 //
-// This renderer keeps the visible trail head locked to the live object dot by
-// splitting the active orbit segment at the current interpolated position. It is
-// intentionally event-driven only: app.js calls updateTrailSegments every time a
-// prediction-horizon interpolation frame is drawn, so no preRender entity churn is
-// needed.
+// This renderer intentionally draws a moving comet-style trail behind each object
+// instead of a mostly-static full-orbit gradient. app.js calls updateTrailSegments
+// for every prediction-horizon interpolation frame, so the final trail segment is
+// rebuilt to terminate exactly at the current interpolated dot position.
 
 (function patchLiveOrbitTrails() {
+  const TRAIL_FRACTION_OF_ORBIT = 0.32;
+  const TRAIL_SEGMENT_COUNT = 48;
+
   function squaredDistance(a, b) {
     return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
   }
@@ -39,51 +41,36 @@
     return bestProgress;
   }
 
-  function trailAlphaAtMidpoint(midpoint, progress, length) {
-    const behindDistance = wrapIndex(progress - midpoint, length);
-    const raw = 1 - behindDistance / length;
-    const eased = Math.pow(clamp(raw, 0, 1), 1.7);
-    return eased < 0.025 ? 0 : clamp(eased, 0, 0.96);
+  function sampleLivePath(path, progress, liveProgress, livePoint) {
+    if (Math.abs(progress - liveProgress) < 1e-6) return livePoint;
+    return samplePath(path, progress);
   }
 
-  function buildLiveTrailSegments(path, progress, currentPosition) {
+  function buildMovingTrailSegments(path, progress, currentPosition) {
     const length = effectivePathLength(path);
     if (length < 2) return [];
 
     const liveProgress = closestProgressOnPath(path, currentPosition, progress);
-    const wrappedProgress = wrapIndex(liveProgress, length);
-    const activeIndex = Math.floor(wrappedProgress);
-    const frac = wrappedProgress - activeIndex;
-    const livePoint = currentPosition || samplePath(path, wrappedProgress);
+    const livePoint = currentPosition || samplePath(path, liveProgress);
+    const trailLength = Math.max(2, length * TRAIL_FRACTION_OF_ORBIT);
+    const segmentCount = Math.min(TRAIL_SEGMENT_COUNT, Math.max(8, Math.round(trailLength)));
+    const startProgress = liveProgress - trailLength;
+    const points = [];
+
+    for (let i = 0; i <= segmentCount; i += 1) {
+      const t = i / segmentCount;
+      const p = startProgress + trailLength * t;
+      points.push(sampleLivePath(path, p, liveProgress, livePoint));
+    }
+
+    // The final point must be the exact object position used by app.js for the dot.
+    points[points.length - 1] = livePoint;
+
     const segments = [];
-
-    for (let i = 0; i < length; i += 1) {
-      const p0 = path[i];
-      const p1 = path[(i + 1) % length];
-
-      if (i === activeIndex) {
-        // Segment behind the object: terminate exactly at the dot.
-        if (frac > 1e-6) {
-          segments.push({
-            start: p0,
-            end: livePoint,
-            alpha: trailAlphaAtMidpoint(i + frac * 0.5, wrappedProgress, length),
-          });
-        }
-
-        // Segment ahead of the object: begin exactly at the dot, but keep it
-        // mostly transparent so the direction of travel is still readable.
-        if (frac < 1 - 1e-6) {
-          segments.push({
-            start: livePoint,
-            end: p1,
-            alpha: 0.04,
-          });
-        }
-      } else {
-        const alpha = trailAlphaAtMidpoint(i + 0.5, wrappedProgress, length);
-        segments.push({ start: p0, end: p1, alpha });
-      }
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const t = (i + 1) / (points.length - 1);
+      const alpha = clamp(0.08 + Math.pow(t, 1.7) * 0.88, 0.08, 0.96);
+      segments.push({ start: points[i], end: points[i + 1], alpha });
     }
 
     return segments;
@@ -91,10 +78,10 @@
 
   function makeSegmentEntity(refKey, color) {
     const entity = viewer.entities.add({
-      name: `${refKey} live segment`,
+      name: `${refKey} moving trail segment`,
       polyline: {
-        positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
-        width: 2.7,
+        positions: new Cesium.ConstantProperty([Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO]),
+        width: 3.0,
         material: new Cesium.ColorMaterialProperty(color.withAlpha(0)),
         clampToGround: false,
         arcType: Cesium.ArcType.NONE,
@@ -120,15 +107,18 @@
     const length = effectivePathLength(path);
     if (length < 2) return;
 
-    const displaySegments = buildLiveTrailSegments(path, progress, currentPosition);
+    const displaySegments = buildMovingTrailSegments(path, progress, currentPosition);
     const entities = ensureLiveTrailSegments(refKey, displaySegments.length, color);
 
     for (let i = 0; i < displaySegments.length; i += 1) {
       const segment = displaySegments[i];
-      entities[i].polyline.positions = pathToCartesianPair(segment.start, segment.end);
+      entities[i].polyline.positions = new Cesium.ConstantProperty(
+        pathToCartesianPair(segment.start, segment.end),
+      );
       entities[i].polyline.material = new Cesium.ColorMaterialProperty(color.withAlpha(segment.alpha));
-      entities[i].show = segment.alpha > 0.01;
+      entities[i].show = true;
     }
+
     viewer.scene.requestRender();
   }
 
