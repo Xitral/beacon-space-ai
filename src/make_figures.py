@@ -17,6 +17,7 @@ UNCERTAINTY_METRICS_PATH = RESULTS_DIR / "uncertainty_metrics.csv"
 UNCERTAINTY_ABSTENTION_PATH = RESULTS_DIR / "uncertainty_abstention.csv"
 REPEATED_SPLIT_SUMMARY_PATH = RESULTS_DIR / "repeated_split_summary.csv"
 REPEATED_SPLIT_ESCALATION_SUMMARY_PATH = RESULTS_DIR / "repeated_split_escalation_summary.csv"
+RISK_ABLATION_SUMMARY_PATH = RESULTS_DIR / "risk_ablation_summary.csv"
 
 HORIZON_ORDER = ["early", "3d", "2d", "1d"]
 CALIBRATION_MODEL_ORDER = [
@@ -34,6 +35,11 @@ REPEATED_MODEL_ORDER = [
     "current_risk_baseline",
     "gradient_boosting",
     "bootstrap_gradient_boosting_ensemble",
+]
+RISK_ABLATION_MODEL_ORDER = [
+    "current_risk_baseline",
+    "gradient_boosting_with_risk",
+    "gradient_boosting_without_risk",
 ]
 REPEATED_POLICY_ORDER = [
     "random_escalation",
@@ -394,7 +400,11 @@ def plot_uncertainty_abstention_coverage(uncertainty_abstention: pd.DataFrame) -
     save_current_figure(FIGURES_DIR / "uncertainty_abstention_coverage.png")
 
 
-def prepare_repeated_metric_summary(repeated_summary: pd.DataFrame, mean_metric: str, std_metric: str) -> pd.DataFrame:
+def prepare_repeated_metric_summary(
+    repeated_summary: pd.DataFrame,
+    mean_metric: str,
+    std_metric: str,
+) -> pd.DataFrame:
     required = {"model", "horizon", "split", mean_metric, std_metric}
     missing = required - set(repeated_summary.columns)
     if missing:
@@ -523,9 +533,7 @@ def plot_repeated_split_escalation_10pct(repeated_escalation_summary: pd.DataFra
 
 def plot_repeated_split_figures_if_available() -> None:
     if not REPEATED_SPLIT_SUMMARY_PATH.exists() or not REPEATED_SPLIT_ESCALATION_SUMMARY_PATH.exists():
-        print(
-            "Skipping repeated split figures because repeated split summary files are missing."
-        )
+        print("Skipping repeated split figures because repeated split summary files are missing.")
         return
 
     repeated_summary = pd.read_csv(REPEATED_SPLIT_SUMMARY_PATH)
@@ -533,6 +541,91 @@ def plot_repeated_split_figures_if_available() -> None:
     plot_repeated_split_pr_auc(repeated_summary)
     plot_repeated_split_top5_recall(repeated_summary)
     plot_repeated_split_escalation_10pct(repeated_escalation_summary)
+
+
+def prepare_risk_ablation_metric_summary(
+    risk_ablation_summary: pd.DataFrame,
+    mean_metric: str,
+    std_metric: str,
+) -> pd.DataFrame:
+    required = {"model", "horizon", "split", mean_metric, std_metric}
+    missing = required - set(risk_ablation_summary.columns)
+    if missing:
+        raise ValueError(f"Missing required risk ablation summary columns: {missing}")
+
+    df = risk_ablation_summary[
+        (risk_ablation_summary["split"] == "test")
+        & (risk_ablation_summary["horizon"].isin(HORIZON_ORDER))
+        & (risk_ablation_summary["model"].isin(RISK_ABLATION_MODEL_ORDER))
+    ].copy()
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
+    df["model"] = pd.Categorical(df["model"], categories=RISK_ABLATION_MODEL_ORDER, ordered=True)
+    return df.sort_values(["horizon", "model"])
+
+
+def plot_risk_ablation_metric_with_errorbars(
+    risk_ablation_summary: pd.DataFrame,
+    mean_metric: str,
+    std_metric: str,
+    ylabel: str,
+    title: str,
+    output_path: Path,
+    y_min: float,
+    y_max: float,
+) -> None:
+    df = prepare_risk_ablation_metric_summary(risk_ablation_summary, mean_metric, std_metric)
+    x = np.arange(len(HORIZON_ORDER))
+
+    plt.figure(figsize=(9, 5))
+    for model in RISK_ABLATION_MODEL_ORDER:
+        model_df = df[df["model"] == model].set_index("horizon").reindex(HORIZON_ORDER)
+        if model_df.empty:
+            continue
+        plt.errorbar(
+            x,
+            model_df[mean_metric].to_numpy(dtype=float),
+            yerr=model_df[std_metric].to_numpy(dtype=float),
+            marker="o",
+            capsize=3,
+            label=model,
+        )
+
+    plt.xticks(x, HORIZON_ORDER)
+    plt.xlabel("Prediction horizon")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.ylim(y_min, y_max)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    save_current_figure(output_path)
+
+
+def plot_risk_ablation_figures_if_available() -> None:
+    if not RISK_ABLATION_SUMMARY_PATH.exists():
+        print("Skipping risk ablation figures because risk ablation summary file is missing.")
+        return
+
+    risk_ablation_summary = pd.read_csv(RISK_ABLATION_SUMMARY_PATH)
+    plot_risk_ablation_metric_with_errorbars(
+        risk_ablation_summary=risk_ablation_summary,
+        mean_metric="pr_auc_mean",
+        std_metric="pr_auc_std",
+        ylabel="Mean PR-AUC across repeated splits",
+        title="Risk feature ablation: PR-AUC",
+        output_path=FIGURES_DIR / "risk_ablation_pr_auc.png",
+        y_min=0.0,
+        y_max=1.0,
+    )
+    plot_risk_ablation_metric_with_errorbars(
+        risk_ablation_summary=risk_ablation_summary,
+        mean_metric="recall_top_5_mean",
+        std_metric="recall_top_5_std",
+        ylabel="Mean recall in top 5% review set",
+        title="Risk feature ablation: top 5% high-risk capture",
+        output_path=FIGURES_DIR / "risk_ablation_top5_recall.png",
+        y_min=0.0,
+        y_max=1.05,
+    )
 
 
 def write_uncertainty_summary_tables(
@@ -663,6 +756,7 @@ def main() -> None:
     plot_positive_escalation_rate(uncertainty_abstention)
     plot_uncertainty_abstention_coverage(uncertainty_abstention)
     plot_repeated_split_figures_if_available()
+    plot_risk_ablation_figures_if_available()
 
     if HORIZON_COVERAGE_PATH.exists():
         horizon_coverage = pd.read_csv(HORIZON_COVERAGE_PATH)
