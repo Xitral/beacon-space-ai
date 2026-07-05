@@ -15,6 +15,8 @@ QUANTILE_CURVES_PATH = RESULTS_DIR / "calibration_curves_quantile.csv"
 HORIZON_COVERAGE_PATH = RESULTS_DIR / "horizon_coverage.csv"
 UNCERTAINTY_METRICS_PATH = RESULTS_DIR / "uncertainty_metrics.csv"
 UNCERTAINTY_ABSTENTION_PATH = RESULTS_DIR / "uncertainty_abstention.csv"
+REPEATED_SPLIT_SUMMARY_PATH = RESULTS_DIR / "repeated_split_summary.csv"
+REPEATED_SPLIT_ESCALATION_SUMMARY_PATH = RESULTS_DIR / "repeated_split_escalation_summary.csv"
 
 HORIZON_ORDER = ["early", "3d", "2d", "1d"]
 CALIBRATION_MODEL_ORDER = [
@@ -27,6 +29,16 @@ BASELINE_MODEL_ORDER = [
     "logistic_regression",
     "random_forest",
     "gradient_boosting",
+]
+REPEATED_MODEL_ORDER = [
+    "current_risk_baseline",
+    "gradient_boosting",
+    "bootstrap_gradient_boosting_ensemble",
+]
+REPEATED_POLICY_ORDER = [
+    "random_escalation",
+    "current_risk_escalation",
+    "bootstrap_uncertainty_escalation",
 ]
 
 
@@ -50,7 +62,6 @@ def prepare_metric_table(
 ) -> pd.DataFrame:
     required = {"model", "horizon", "split", metric}
     missing = required - set(df.columns)
-
     if missing:
         raise ValueError(f"Missing required columns for {metric}: {missing}")
 
@@ -60,24 +71,11 @@ def prepare_metric_table(
         & (df["model"].isin(model_order))
     ].copy()
 
-    filtered["horizon"] = pd.Categorical(
-        filtered["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
-
-    filtered["model"] = pd.Categorical(
-        filtered["model"],
-        categories=model_order,
-        ordered=True,
-    )
-
+    filtered["horizon"] = pd.Categorical(filtered["horizon"], categories=HORIZON_ORDER, ordered=True)
+    filtered["model"] = pd.Categorical(filtered["model"], categories=model_order, ordered=True)
     filtered = filtered.sort_values(["horizon", "model"])
-
     table = filtered.pivot(index="horizon", columns="model", values=metric)
-    table = table.reindex(HORIZON_ORDER)
-
-    return table
+    return table.reindex(HORIZON_ORDER)
 
 
 def plot_metric_lines(
@@ -89,7 +87,6 @@ def plot_metric_lines(
     y_max: float | None = None,
 ) -> None:
     x = np.arange(len(table.index))
-
     plt.figure(figsize=(9, 5))
 
     for model in table.columns:
@@ -100,22 +97,15 @@ def plot_metric_lines(
     plt.xlabel("Prediction horizon")
     plt.ylabel(metric_label)
     plt.title(title)
-
     if y_min is not None or y_max is not None:
         plt.ylim(y_min, y_max)
-
     plt.grid(True, alpha=0.3)
     plt.legend()
     save_current_figure(output_path)
 
 
 def plot_pr_auc_by_horizon(baseline_metrics: pd.DataFrame) -> None:
-    table = prepare_metric_table(
-        baseline_metrics,
-        metric="pr_auc",
-        model_order=BASELINE_MODEL_ORDER,
-    )
-
+    table = prepare_metric_table(baseline_metrics, metric="pr_auc", model_order=BASELINE_MODEL_ORDER)
     plot_metric_lines(
         table=table,
         metric_label="PR-AUC",
@@ -127,12 +117,7 @@ def plot_pr_auc_by_horizon(baseline_metrics: pd.DataFrame) -> None:
 
 
 def plot_top5_recall_by_horizon(baseline_metrics: pd.DataFrame) -> None:
-    table = prepare_metric_table(
-        baseline_metrics,
-        metric="recall_top_5",
-        model_order=BASELINE_MODEL_ORDER,
-    )
-
+    table = prepare_metric_table(baseline_metrics, metric="recall_top_5", model_order=BASELINE_MODEL_ORDER)
     plot_metric_lines(
         table=table,
         metric_label="Recall in top 5% review set",
@@ -144,12 +129,7 @@ def plot_top5_recall_by_horizon(baseline_metrics: pd.DataFrame) -> None:
 
 
 def plot_brier_score_by_horizon(calibration_metrics: pd.DataFrame) -> None:
-    table = prepare_metric_table(
-        calibration_metrics,
-        metric="brier_score",
-        model_order=CALIBRATION_MODEL_ORDER,
-    )
-
+    table = prepare_metric_table(calibration_metrics, metric="brier_score", model_order=CALIBRATION_MODEL_ORDER)
     plot_metric_lines(
         table=table,
         metric_label="Brier score",
@@ -161,12 +141,7 @@ def plot_brier_score_by_horizon(calibration_metrics: pd.DataFrame) -> None:
 
 
 def plot_ece_by_horizon(calibration_metrics: pd.DataFrame) -> None:
-    table = prepare_metric_table(
-        calibration_metrics,
-        metric="ece",
-        model_order=CALIBRATION_MODEL_ORDER,
-    )
-
+    table = prepare_metric_table(calibration_metrics, metric="ece", model_order=CALIBRATION_MODEL_ORDER)
     plot_metric_lines(
         table=table,
         metric_label="Expected Calibration Error",
@@ -185,20 +160,12 @@ def plot_horizon_coverage(horizon_coverage: pd.DataFrame) -> None:
         "percent_fallback_rows",
     }
     missing = required - set(horizon_coverage.columns)
-
     if missing:
         raise ValueError(f"Missing required horizon coverage columns: {missing}")
 
     df = horizon_coverage[horizon_coverage["horizon"].isin(HORIZON_ORDER)].copy()
-
-    df["horizon"] = pd.Categorical(
-        df["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
-
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
     df = df.sort_values("horizon")
-
     x = np.arange(len(df))
 
     plt.figure(figsize=(9, 5))
@@ -208,7 +175,6 @@ def plot_horizon_coverage(horizon_coverage: pd.DataFrame) -> None:
     plt.ylabel("Median time to TCA, days")
     plt.title("Actual timing of selected horizon snapshots")
     plt.grid(True, alpha=0.3)
-
     save_current_figure(FIGURES_DIR / "horizon_timing.png")
 
     plt.figure(figsize=(9, 5))
@@ -221,7 +187,6 @@ def plot_horizon_coverage(horizon_coverage: pd.DataFrame) -> None:
     plt.ylim(0.0, 105.0)
     plt.grid(True, alpha=0.3)
     plt.legend()
-
     save_current_figure(FIGURES_DIR / "horizon_coverage.png")
 
 
@@ -235,41 +200,24 @@ def plot_quantile_reliability_by_horizon(quantile_curves: pd.DataFrame) -> None:
         "observed_positive_rate",
     }
     missing = required - set(quantile_curves.columns)
-
     if missing:
         raise ValueError(f"Missing required quantile curve columns: {missing}")
 
     model_name = "gradient_boosting_sigmoid_calibrated"
-
     df = quantile_curves[
         (quantile_curves["split"] == "test")
         & (quantile_curves["model"] == model_name)
         & (quantile_curves["horizon"].isin(HORIZON_ORDER))
     ].copy()
-
-    df = df.dropna(
-        subset=[
-            "mean_predicted_probability",
-            "observed_positive_rate",
-        ]
-    )
-
-    df["horizon"] = pd.Categorical(
-        df["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
-
+    df = df.dropna(subset=["mean_predicted_probability", "observed_positive_rate"])
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
     df = df.sort_values(["horizon", "bin_id"])
 
     plt.figure(figsize=(8, 6))
-
     for horizon in HORIZON_ORDER:
         horizon_df = df[df["horizon"] == horizon]
-
         if horizon_df.empty:
             continue
-
         plt.plot(
             horizon_df["mean_predicted_probability"],
             horizon_df["observed_positive_rate"],
@@ -277,14 +225,8 @@ def plot_quantile_reliability_by_horizon(quantile_curves: pd.DataFrame) -> None:
             label=horizon,
         )
 
-    max_value = max(
-        float(df["mean_predicted_probability"].max()),
-        float(df["observed_positive_rate"].max()),
-        0.01,
-    )
-
+    max_value = max(float(df["mean_predicted_probability"].max()), float(df["observed_positive_rate"].max()), 0.01)
     plt.plot([0, max_value], [0, max_value], linestyle="--", label="Perfect calibration")
-
     plt.xlabel("Mean predicted probability")
     plt.ylabel("Observed high-risk rate")
     plt.title("Quantile-binned reliability: calibrated gradient boosting")
@@ -292,7 +234,6 @@ def plot_quantile_reliability_by_horizon(quantile_curves: pd.DataFrame) -> None:
     plt.ylim(0.0, max_value)
     plt.grid(True, alpha=0.3)
     plt.legend()
-
     save_current_figure(FIGURES_DIR / "quantile_reliability_by_horizon.png")
 
 
@@ -306,7 +247,6 @@ def plot_quantile_reliability_comparison_1d(quantile_curves: pd.DataFrame) -> No
         "observed_positive_rate",
     }
     missing = required - set(quantile_curves.columns)
-
     if missing:
         raise ValueError(f"Missing required quantile curve columns: {missing}")
 
@@ -315,36 +255,20 @@ def plot_quantile_reliability_comparison_1d(quantile_curves: pd.DataFrame) -> No
         "gradient_boosting_raw",
         "gradient_boosting_sigmoid_calibrated",
     ]
-
     df = quantile_curves[
         (quantile_curves["split"] == "test")
         & (quantile_curves["horizon"] == "1d")
         & (quantile_curves["model"].isin(model_order))
     ].copy()
-
-    df = df.dropna(
-        subset=[
-            "mean_predicted_probability",
-            "observed_positive_rate",
-        ]
-    )
-
-    df["model"] = pd.Categorical(
-        df["model"],
-        categories=model_order,
-        ordered=True,
-    )
-
+    df = df.dropna(subset=["mean_predicted_probability", "observed_positive_rate"])
+    df["model"] = pd.Categorical(df["model"], categories=model_order, ordered=True)
     df = df.sort_values(["model", "bin_id"])
 
     plt.figure(figsize=(8, 6))
-
     for model in model_order:
         model_df = df[df["model"] == model]
-
         if model_df.empty:
             continue
-
         plt.plot(
             model_df["mean_predicted_probability"],
             model_df["observed_positive_rate"],
@@ -352,14 +276,8 @@ def plot_quantile_reliability_comparison_1d(quantile_curves: pd.DataFrame) -> No
             label=model,
         )
 
-    max_value = max(
-        float(df["mean_predicted_probability"].max()),
-        float(df["observed_positive_rate"].max()),
-        0.01,
-    )
-
+    max_value = max(float(df["mean_predicted_probability"].max()), float(df["observed_positive_rate"].max()), 0.01)
     plt.plot([0, max_value], [0, max_value], linestyle="--", label="Perfect calibration")
-
     plt.xlabel("Mean predicted probability")
     plt.ylabel("Observed high-risk rate")
     plt.title("Quantile-binned reliability comparison at 1d")
@@ -367,8 +285,8 @@ def plot_quantile_reliability_comparison_1d(quantile_curves: pd.DataFrame) -> No
     plt.ylim(0.0, max_value)
     plt.grid(True, alpha=0.3)
     plt.legend()
-
     save_current_figure(FIGURES_DIR / "quantile_reliability_comparison_1d.png")
+
 
 def prepare_uncertainty_test_df(uncertainty_metrics: pd.DataFrame) -> pd.DataFrame:
     required = {
@@ -379,7 +297,6 @@ def prepare_uncertainty_test_df(uncertainty_metrics: pd.DataFrame) -> pd.DataFra
         "mean_predictive_std_negative",
     }
     missing = required - set(uncertainty_metrics.columns)
-
     if missing:
         raise ValueError(f"Missing required uncertainty metric columns: {missing}")
 
@@ -387,56 +304,29 @@ def prepare_uncertainty_test_df(uncertainty_metrics: pd.DataFrame) -> pd.DataFra
         (uncertainty_metrics["split"] == "test")
         & (uncertainty_metrics["horizon"].isin(HORIZON_ORDER))
     ].copy()
-
-    df["horizon"] = pd.Categorical(
-        df["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
-
-    df = df.sort_values("horizon")
-
-    return df
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
+    return df.sort_values("horizon")
 
 
 def plot_uncertainty_positive_vs_negative(uncertainty_metrics: pd.DataFrame) -> None:
     df = prepare_uncertainty_test_df(uncertainty_metrics)
-
     x = np.arange(len(df))
 
     plt.figure(figsize=(9, 5))
-    plt.plot(
-        x,
-        df["mean_predictive_std_positive"],
-        marker="o",
-        label="High-risk events",
-    )
-    plt.plot(
-        x,
-        df["mean_predictive_std_negative"],
-        marker="o",
-        label="Non-high-risk events",
-    )
-
+    plt.plot(x, df["mean_predictive_std_positive"], marker="o", label="High-risk events")
+    plt.plot(x, df["mean_predictive_std_negative"], marker="o", label="Non-high-risk events")
     plt.xticks(x, df["horizon"])
     plt.xlabel("Prediction horizon")
     plt.ylabel("Mean predictive standard deviation")
     plt.title("Bootstrap uncertainty is concentrated on high-risk events")
     plt.grid(True, alpha=0.3)
     plt.legend()
-
     save_current_figure(FIGURES_DIR / "uncertainty_positive_vs_negative.png")
 
 
 def plot_positive_escalation_rate(uncertainty_abstention: pd.DataFrame) -> None:
-    required = {
-        "horizon",
-        "split",
-        "escalated_fraction",
-        "positive_escalation_rate",
-    }
+    required = {"horizon", "split", "escalated_fraction", "positive_escalation_rate"}
     missing = required - set(uncertainty_abstention.columns)
-
     if missing:
         raise ValueError(f"Missing required abstention columns: {missing}")
 
@@ -446,49 +336,32 @@ def plot_positive_escalation_rate(uncertainty_abstention: pd.DataFrame) -> None:
         & (uncertainty_abstention["escalated_fraction"] > 0)
         & (uncertainty_abstention["escalated_fraction"] <= 0.30)
     ].copy()
-
-    df["horizon"] = pd.Categorical(
-        df["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
-
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
     df = df.sort_values(["horizon", "escalated_fraction"])
 
     plt.figure(figsize=(9, 5))
-
     for horizon in HORIZON_ORDER:
         horizon_df = df[df["horizon"] == horizon]
-
         if horizon_df.empty:
             continue
-
         plt.plot(
             horizon_df["escalated_fraction"] * 100,
             horizon_df["positive_escalation_rate"] * 100,
             marker="o",
             label=horizon,
         )
-
     plt.xlabel("Most uncertain events escalated, %")
     plt.ylabel("High-risk events captured, %")
     plt.title("Uncertainty-based escalation captures high-risk events")
     plt.ylim(0.0, 105.0)
     plt.grid(True, alpha=0.3)
     plt.legend()
-
     save_current_figure(FIGURES_DIR / "positive_escalation_rate.png")
 
 
 def plot_uncertainty_abstention_coverage(uncertainty_abstention: pd.DataFrame) -> None:
-    required = {
-        "horizon",
-        "split",
-        "coverage_rate",
-        "positive_escalation_rate",
-    }
+    required = {"horizon", "split", "coverage_rate", "positive_escalation_rate"}
     missing = required - set(uncertainty_abstention.columns)
-
     if missing:
         raise ValueError(f"Missing required abstention columns: {missing}")
 
@@ -497,30 +370,20 @@ def plot_uncertainty_abstention_coverage(uncertainty_abstention: pd.DataFrame) -
         & (uncertainty_abstention["horizon"].isin(HORIZON_ORDER))
         & (uncertainty_abstention["coverage_rate"] >= 0.70)
     ].copy()
-
-    df["horizon"] = pd.Categorical(
-        df["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
-
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
     df = df.sort_values(["horizon", "coverage_rate"], ascending=[True, False])
 
     plt.figure(figsize=(9, 5))
-
     for horizon in HORIZON_ORDER:
         horizon_df = df[df["horizon"] == horizon]
-
         if horizon_df.empty:
             continue
-
         plt.plot(
             horizon_df["coverage_rate"] * 100,
             horizon_df["positive_escalation_rate"] * 100,
             marker="o",
             label=horizon,
         )
-
     plt.xlabel("Automated coverage remaining, %")
     plt.ylabel("High-risk events escalated, %")
     plt.title("Coverage tradeoff from uncertainty-based escalation")
@@ -528,8 +391,148 @@ def plot_uncertainty_abstention_coverage(uncertainty_abstention: pd.DataFrame) -
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.gca().invert_xaxis()
-
     save_current_figure(FIGURES_DIR / "uncertainty_abstention_coverage.png")
+
+
+def prepare_repeated_metric_summary(repeated_summary: pd.DataFrame, mean_metric: str, std_metric: str) -> pd.DataFrame:
+    required = {"model", "horizon", "split", mean_metric, std_metric}
+    missing = required - set(repeated_summary.columns)
+    if missing:
+        raise ValueError(f"Missing required repeated split summary columns: {missing}")
+
+    df = repeated_summary[
+        (repeated_summary["split"] == "test")
+        & (repeated_summary["horizon"].isin(HORIZON_ORDER))
+        & (repeated_summary["model"].isin(REPEATED_MODEL_ORDER))
+    ].copy()
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
+    df["model"] = pd.Categorical(df["model"], categories=REPEATED_MODEL_ORDER, ordered=True)
+    return df.sort_values(["horizon", "model"])
+
+
+def plot_repeated_metric_with_errorbars(
+    repeated_summary: pd.DataFrame,
+    mean_metric: str,
+    std_metric: str,
+    ylabel: str,
+    title: str,
+    output_path: Path,
+    y_min: float,
+    y_max: float,
+) -> None:
+    df = prepare_repeated_metric_summary(repeated_summary, mean_metric, std_metric)
+    x = np.arange(len(HORIZON_ORDER))
+
+    plt.figure(figsize=(9, 5))
+    for model in REPEATED_MODEL_ORDER:
+        model_df = df[df["model"] == model].set_index("horizon").reindex(HORIZON_ORDER)
+        if model_df.empty:
+            continue
+        plt.errorbar(
+            x,
+            model_df[mean_metric].to_numpy(dtype=float),
+            yerr=model_df[std_metric].to_numpy(dtype=float),
+            marker="o",
+            capsize=3,
+            label=model,
+        )
+
+    plt.xticks(x, HORIZON_ORDER)
+    plt.xlabel("Prediction horizon")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.ylim(y_min, y_max)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    save_current_figure(output_path)
+
+
+def plot_repeated_split_pr_auc(repeated_summary: pd.DataFrame) -> None:
+    plot_repeated_metric_with_errorbars(
+        repeated_summary=repeated_summary,
+        mean_metric="pr_auc_mean",
+        std_metric="pr_auc_std",
+        ylabel="Mean PR-AUC across repeated splits",
+        title="Repeated split robustness: PR-AUC",
+        output_path=FIGURES_DIR / "repeated_split_pr_auc.png",
+        y_min=0.0,
+        y_max=1.0,
+    )
+
+
+def plot_repeated_split_top5_recall(repeated_summary: pd.DataFrame) -> None:
+    plot_repeated_metric_with_errorbars(
+        repeated_summary=repeated_summary,
+        mean_metric="recall_top_5_mean",
+        std_metric="recall_top_5_std",
+        ylabel="Mean recall in top 5% review set",
+        title="Repeated split robustness: top 5% high-risk capture",
+        output_path=FIGURES_DIR / "repeated_split_top5_recall.png",
+        y_min=0.0,
+        y_max=1.05,
+    )
+
+
+def plot_repeated_split_escalation_10pct(repeated_escalation_summary: pd.DataFrame) -> None:
+    required = {
+        "policy",
+        "horizon",
+        "split",
+        "escalated_fraction",
+        "positive_escalation_rate_mean",
+        "positive_escalation_rate_std",
+    }
+    missing = required - set(repeated_escalation_summary.columns)
+    if missing:
+        raise ValueError(f"Missing repeated escalation summary columns: {missing}")
+
+    df = repeated_escalation_summary[
+        (repeated_escalation_summary["split"] == "test")
+        & (repeated_escalation_summary["horizon"].isin(HORIZON_ORDER))
+        & (repeated_escalation_summary["policy"].isin(REPEATED_POLICY_ORDER))
+        & np.isclose(repeated_escalation_summary["escalated_fraction"], 0.10)
+    ].copy()
+    df["horizon"] = pd.Categorical(df["horizon"], categories=HORIZON_ORDER, ordered=True)
+    df["policy"] = pd.Categorical(df["policy"], categories=REPEATED_POLICY_ORDER, ordered=True)
+    df = df.sort_values(["horizon", "policy"])
+    x = np.arange(len(HORIZON_ORDER))
+
+    plt.figure(figsize=(9, 5))
+    for policy in REPEATED_POLICY_ORDER:
+        policy_df = df[df["policy"] == policy].set_index("horizon").reindex(HORIZON_ORDER)
+        if policy_df.empty:
+            continue
+        plt.errorbar(
+            x,
+            policy_df["positive_escalation_rate_mean"].to_numpy(dtype=float) * 100,
+            yerr=policy_df["positive_escalation_rate_std"].to_numpy(dtype=float) * 100,
+            marker="o",
+            capsize=3,
+            label=policy,
+        )
+
+    plt.xticks(x, HORIZON_ORDER)
+    plt.xlabel("Prediction horizon")
+    plt.ylabel("High-risk events captured at 10% escalation, %")
+    plt.title("Repeated split robustness: 10% escalation policies")
+    plt.ylim(0.0, 105.0)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    save_current_figure(FIGURES_DIR / "repeated_split_escalation_10pct.png")
+
+
+def plot_repeated_split_figures_if_available() -> None:
+    if not REPEATED_SPLIT_SUMMARY_PATH.exists() or not REPEATED_SPLIT_ESCALATION_SUMMARY_PATH.exists():
+        print(
+            "Skipping repeated split figures because repeated split summary files are missing."
+        )
+        return
+
+    repeated_summary = pd.read_csv(REPEATED_SPLIT_SUMMARY_PATH)
+    repeated_escalation_summary = pd.read_csv(REPEATED_SPLIT_ESCALATION_SUMMARY_PATH)
+    plot_repeated_split_pr_auc(repeated_summary)
+    plot_repeated_split_top5_recall(repeated_summary)
+    plot_repeated_split_escalation_10pct(repeated_escalation_summary)
 
 
 def write_uncertainty_summary_tables(
@@ -540,23 +543,13 @@ def write_uncertainty_summary_tables(
         (uncertainty_metrics["split"] == "test")
         & (uncertainty_metrics["horizon"].isin(HORIZON_ORDER))
     ].copy()
-
     abstention_test = uncertainty_abstention[
         (uncertainty_abstention["split"] == "test")
         & (uncertainty_abstention["horizon"].isin(HORIZON_ORDER))
     ].copy()
 
-    metrics_test["horizon"] = pd.Categorical(
-        metrics_test["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
-
-    abstention_test["horizon"] = pd.Categorical(
-        abstention_test["horizon"],
-        categories=HORIZON_ORDER,
-        ordered=True,
-    )
+    metrics_test["horizon"] = pd.Categorical(metrics_test["horizon"], categories=HORIZON_ORDER, ordered=True)
+    abstention_test["horizon"] = pd.Categorical(abstention_test["horizon"], categories=HORIZON_ORDER, ordered=True)
 
     uncertainty_summary = metrics_test[
         [
@@ -593,13 +586,10 @@ def write_uncertainty_summary_tables(
     ].sort_values(["horizon", "escalated_fraction"])
 
     uncertainty_summary.to_csv(RESULTS_DIR / "uncertainty_test_summary.csv", index=False)
-    abstention_summary.to_csv(
-        RESULTS_DIR / "uncertainty_abstention_test_summary.csv",
-        index=False,
-    )
-
+    abstention_summary.to_csv(RESULTS_DIR / "uncertainty_abstention_test_summary.csv", index=False)
     print(f"Wrote {RESULTS_DIR / 'uncertainty_test_summary.csv'}")
     print(f"Wrote {RESULTS_DIR / 'uncertainty_abstention_test_summary.csv'}")
+
 
 def write_summary_tables(
     baseline_metrics: pd.DataFrame,
@@ -609,7 +599,6 @@ def write_summary_tables(
         (baseline_metrics["split"] == "test")
         & (baseline_metrics["horizon"].isin(HORIZON_ORDER))
     ].copy()
-
     calibration_test = calibration_metrics[
         (calibration_metrics["split"] == "test")
         & (calibration_metrics["horizon"].isin(HORIZON_ORDER))
@@ -647,7 +636,6 @@ def write_summary_tables(
 
     baseline_summary.to_csv(RESULTS_DIR / "baseline_test_summary.csv", index=False)
     calibration_summary.to_csv(RESULTS_DIR / "calibration_test_summary.csv", index=False)
-
     print(f"Wrote {RESULTS_DIR / 'baseline_test_summary.csv'}")
     print(f"Wrote {RESULTS_DIR / 'calibration_test_summary.csv'}")
 
@@ -674,6 +662,7 @@ def main() -> None:
     plot_uncertainty_positive_vs_negative(uncertainty_metrics)
     plot_positive_escalation_rate(uncertainty_abstention)
     plot_uncertainty_abstention_coverage(uncertainty_abstention)
+    plot_repeated_split_figures_if_available()
 
     if HORIZON_COVERAGE_PATH.exists():
         horizon_coverage = pd.read_csv(HORIZON_COVERAGE_PATH)
@@ -681,11 +670,7 @@ def main() -> None:
     else:
         print(f"Skipping horizon coverage figures because {HORIZON_COVERAGE_PATH} is missing.")
 
-    write_summary_tables(
-        baseline_metrics=baseline_metrics,
-        calibration_metrics=calibration_metrics,
-    )
-
+    write_summary_tables(baseline_metrics=baseline_metrics, calibration_metrics=calibration_metrics)
     write_uncertainty_summary_tables(
         uncertainty_metrics=uncertainty_metrics,
         uncertainty_abstention=uncertainty_abstention,
