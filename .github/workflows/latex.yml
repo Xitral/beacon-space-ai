@@ -1,0 +1,44 @@
+name: Build LaTeX Paper
+
+on:
+  push:
+    paths:
+      - "paper/**"
+      - "figures/**"
+      - ".github/workflows/latex.yml"
+  pull_request:
+    paths:
+      - "paper/**"
+      - "figures/**"
+      - ".github/workflows/latex.yml"
+  workflow_dispatch:
+
+jobs:
+  build-paper:
+    name: Build paper PDF
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install LaTeX dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            latexmk \
+            texlive-latex-base \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            texlive-bibtex-extra
+
+      - name: Build PDF
+        working-directory: paper
+        run: latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
+
+      - name: Upload paper PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: beacon-paper-pdf
+          path: paper/main.pdf
+          if-no-files-found: error
