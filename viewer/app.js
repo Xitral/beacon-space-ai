@@ -2,10 +2,11 @@ const DATA_URL = "data/conjunction_events.json";
 
 const EARTH_RADIUS_M = 6_371_000;
 const INTERPOLATION_MS = 950;
+const LABEL_FULL_SHOW_DISTANCE_M = 6_500_000;
+const LABEL_HIDE_DISTANCE_M = 16_000_000;
 const TARGET_COLOR = Cesium.Color.fromCssColorString("#57a5ff");
 const SECONDARY_COLOR = Cesium.Color.fromCssColorString("#ffb84d");
 const SEPARATION_COLOR = Cesium.Color.fromCssColorString("#ff5b6e");
-const CA_COLOR = Cesium.Color.fromCssColorString("#ffffff");
 const EARTH_COLOR = Cesium.Color.fromCssColorString("#163f7a");
 const ATMOSPHERE_COLOR = Cesium.Color.fromCssColorString("#6eb6ff").withAlpha(0.10);
 
@@ -88,6 +89,7 @@ viewer.scene.globe.show = false;
 viewer.scene.moon.show = false;
 viewer.scene.screenSpaceCameraController.minimumZoomDistance = 450_000;
 viewer.scene.screenSpaceCameraController.maximumZoomDistance = 90_000_000;
+viewer.scene.screenSpaceCameraController.zoomEventTypes = [Cesium.CameraEventType.WHEEL];
 
 const state = {
   data: null,
@@ -96,7 +98,11 @@ const state = {
   playTimer: null,
   animationFrame: null,
   displaySnapshot: null,
-  refs: {},
+  hovered: null,
+  refs: {
+    targetTrailSegments: [],
+    secondaryTrailSegments: [],
+  },
 };
 
 const eventSelect = document.getElementById("eventSelect");
@@ -116,8 +122,12 @@ function cartesianMidpoint(a, b) {
   return Cesium.Cartesian3.lerp(a, b, 0.5, new Cesium.Cartesian3());
 }
 
-function pathToCartesian(points) {
-  return points.map(kmToCartesian);
+function pathToCartesianPair(a, b) {
+  return [kmToCartesian(a), kmToCartesian(b)];
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function formatNumber(value, digits = 3) {
@@ -347,8 +357,87 @@ function stopAnimation() {
   }
 }
 
+function trailAlpha(segmentIndex, progress, length) {
+  const midpoint = segmentIndex + 0.5;
+  const behindDistance = wrapIndex(progress - midpoint, length);
+  const raw = 1 - behindDistance / length;
+  const eased = Math.pow(clamp(raw, 0, 1), 1.6);
+  return eased < 0.015 ? 0 : clamp(eased, 0, 0.94);
+}
+
+function ensureTrailSegments(refKey, count, color) {
+  const segments = state.refs[refKey];
+  while (segments.length < count) {
+    const entity = viewer.entities.add({
+      name: `${refKey} segment`,
+      polyline: {
+        positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
+        width: 2.7,
+        material: color.withAlpha(0),
+        clampToGround: false,
+        arcType: Cesium.ArcType.NONE,
+      },
+    });
+    segments.push(entity);
+  }
+
+  while (segments.length > count) {
+    const entity = segments.pop();
+    viewer.entities.remove(entity);
+  }
+
+  return segments;
+}
+
+function updateTrailSegments(path, progress, refKey, color) {
+  const length = effectivePathLength(path);
+  if (length < 2) return;
+
+  const safeProgress = isFiniteNumber(progress) ? Number(progress) : closestPathIndex(path, path[0]);
+  const segments = ensureTrailSegments(refKey, length, color);
+
+  for (let i = 0; i < length; i += 1) {
+    const p0 = path[i];
+    const p1 = path[(i + 1) % length];
+    const alpha = trailAlpha(i, safeProgress, length);
+    segments[i].polyline.positions = new Cesium.ConstantProperty(pathToCartesianPair(p0, p1));
+    segments[i].polyline.material = new Cesium.ConstantProperty(color.withAlpha(alpha));
+    segments[i].show = alpha > 0;
+  }
+}
+
+function labelAlphaForCamera() {
+  if (!state.displaySnapshot) return 1;
+  const center = eventCenter(state.displaySnapshot);
+  const distance = Cesium.Cartesian3.distance(viewer.camera.positionWC, center);
+  const alpha = (LABEL_HIDE_DISTANCE_M - distance) / (LABEL_HIDE_DISTANCE_M - LABEL_FULL_SHOW_DISTANCE_M);
+  return clamp(alpha, 0, 1);
+}
+
+function applyLabelFade() {
+  if (!state.refs.targetObject || !state.displaySnapshot) return;
+  const alpha = labelAlphaForCamera();
+  const show = alpha > 0.03;
+  const textColor = Cesium.Color.WHITE.withAlpha(alpha);
+  const backgroundColor = Cesium.Color.BLACK.withAlpha(0.45 * alpha);
+  const centerBackgroundColor = Cesium.Color.BLACK.withAlpha(0.55 * alpha);
+
+  state.refs.targetObject.label.show = show;
+  state.refs.targetObject.label.fillColor = textColor;
+  state.refs.targetObject.label.backgroundColor = backgroundColor;
+
+  state.refs.secondaryObject.label.show = show;
+  state.refs.secondaryObject.label.fillColor = textColor;
+  state.refs.secondaryObject.label.backgroundColor = backgroundColor;
+
+  state.refs.closestApproach.label.show = state.hovered === "center" && show;
+  state.refs.closestApproach.label.fillColor = textColor;
+  state.refs.closestApproach.label.backgroundColor = centerBackgroundColor;
+  viewer.scene.requestRender();
+}
+
 function ensureSceneEntities() {
-  if (state.refs.targetOrbit) return;
+  if (state.refs.earth) return;
 
   state.refs.earth = viewer.entities.add({
     name: "Earth reference sphere",
@@ -367,28 +456,6 @@ function ensureSceneEntities() {
     ellipsoid: {
       radii: new Cesium.Cartesian3(EARTH_RADIUS_M * 1.025, EARTH_RADIUS_M * 1.025, EARTH_RADIUS_M * 1.025),
       material: ATMOSPHERE_COLOR,
-    },
-  });
-
-  state.refs.targetOrbit = viewer.entities.add({
-    name: "Target orbit",
-    polyline: {
-      positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
-      width: 2.5,
-      material: TARGET_COLOR.withAlpha(0.82),
-      clampToGround: false,
-      arcType: Cesium.ArcType.NONE,
-    },
-  });
-
-  state.refs.secondaryOrbit = viewer.entities.add({
-    name: "Secondary orbit",
-    polyline: {
-      positions: [Cesium.Cartesian3.ZERO, Cesium.Cartesian3.ZERO],
-      width: 2.5,
-      material: SECONDARY_COLOR.withAlpha(0.88),
-      clampToGround: false,
-      arcType: Cesium.ArcType.NONE,
     },
   });
 
@@ -414,6 +481,7 @@ function ensureSceneEntities() {
     },
     label: {
       text: "Target",
+      show: true,
       font: "14px sans-serif",
       pixelOffset: new Cesium.Cartesian2(0, -22),
       fillColor: Cesium.Color.WHITE,
@@ -435,6 +503,7 @@ function ensureSceneEntities() {
     },
     label: {
       text: "Secondary",
+      show: true,
       font: "14px sans-serif",
       pixelOffset: new Cesium.Cartesian2(0, -22),
       fillColor: Cesium.Color.WHITE,
@@ -526,17 +595,33 @@ function updateEntityGeometry(snapshot) {
 
   viewer.entities.suspendEvents();
 
-  state.refs.targetOrbit.polyline.positions = new Cesium.ConstantProperty(pathToCartesian(geometry.target_orbit_km));
-  state.refs.secondaryOrbit.polyline.positions = new Cesium.ConstantProperty(pathToCartesian(geometry.secondary_orbit_km));
+  updateTrailSegments(
+    geometry.target_orbit_km,
+    geometry._target_path_progress ?? closestPathIndex(geometry.target_orbit_km, geometry.target_position_km),
+    "targetTrailSegments",
+    TARGET_COLOR,
+  );
+  updateTrailSegments(
+    geometry.secondary_orbit_km,
+    geometry._secondary_path_progress ?? closestPathIndex(geometry.secondary_orbit_km, geometry.secondary_position_km),
+    "secondaryTrailSegments",
+    SECONDARY_COLOR,
+  );
+
   state.refs.separation.polyline.positions = new Cesium.ConstantProperty([target, secondary]);
+  state.refs.separation.polyline.material = new Cesium.ConstantProperty(SEPARATION_COLOR);
 
   state.refs.targetObject.position = new Cesium.ConstantPositionProperty(target);
   state.refs.targetObject.point.color = new Cesium.ConstantProperty(TARGET_COLOR);
 
   state.refs.secondaryObject.position = new Cesium.ConstantPositionProperty(secondary);
+  state.refs.secondaryObject.point.color = new Cesium.ConstantProperty(SECONDARY_COLOR);
+
   state.refs.closestApproach.position = new Cesium.ConstantPositionProperty(closest);
+  state.refs.closestApproach.point.color = new Cesium.ConstantProperty(SEPARATION_COLOR);
 
   viewer.entities.resumeEvents();
+  applyLabelFade();
   viewer.scene.requestRender();
 }
 
@@ -561,6 +646,7 @@ function centerCameraOnSnapshot(snapshot) {
   const offset = new Cesium.HeadingPitchRange(0.0, -0.42, range);
   viewer.trackedEntity = undefined;
   viewer.camera.lookAt(center, offset);
+  applyLabelFade();
 }
 
 function setTracking(enabled) {
@@ -569,6 +655,7 @@ function setTracking(enabled) {
   } else {
     viewer.trackedEntity = undefined;
     viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    applyLabelFade();
   }
 }
 
@@ -576,9 +663,12 @@ function renderSnapshot(snapshot, track = false) {
   state.displaySnapshot = snapshot;
   updateEntityGeometry(snapshot);
   renderMetrics(currentEvent(), snapshot);
+  updateHoverLabels();
 
   if (track && trackToggle.checked) {
     centerCameraOnSnapshot(snapshot);
+  } else {
+    applyLabelFade();
   }
 }
 
@@ -638,7 +728,8 @@ function setEvent(index) {
   state.horizonIndex = 0;
   state.displaySnapshot = currentSnapshot();
   populateHorizonSelect();
-  resetHoverLabels();
+  state.hovered = null;
+  updateHoverLabels();
   renderScene(true);
 }
 
@@ -664,34 +755,32 @@ function togglePlay() {
   }, smoothToggle.checked ? 1250 : 900);
 }
 
-function resetHoverLabels() {
-  if (!state.refs.targetObject) return;
-  state.refs.targetObject.label.text = "Target";
-  state.refs.secondaryObject.label.text = "Secondary";
-  state.refs.closestApproach.label.show = false;
-  state.refs.closestApproach.label.text = "";
+function updateHoverLabels() {
+  if (!state.refs.targetObject || !state.displaySnapshot) return;
+  const snapshot = state.displaySnapshot;
+
+  state.refs.targetObject.label.text = state.hovered === "target" ? objectName(snapshot, "target") : "Target";
+  state.refs.secondaryObject.label.text = state.hovered === "secondary" ? objectName(snapshot, "secondary") : "Secondary";
+  state.refs.closestApproach.label.text = state.hovered === "center"
+    ? `Distance: ${formatNumber(snapshot.geometry.relative_distance_km, 3)} km`
+    : "";
+  applyLabelFade();
 }
 
 function handleHover(movement) {
-  resetHoverLabels();
   const picked = viewer.scene.pick(movement.endPosition);
-  if (!Cesium.defined(picked) || !picked.id) {
-    viewer.scene.requestRender();
-    return;
+  let hovered = null;
+
+  if (Cesium.defined(picked) && picked.id) {
+    if (picked.id === state.refs.targetObject) hovered = "target";
+    if (picked.id === state.refs.secondaryObject) hovered = "secondary";
+    if (picked.id === state.refs.closestApproach) hovered = "center";
   }
 
-  const snapshot = state.displaySnapshot || currentSnapshot();
-
-  if (picked.id === state.refs.targetObject) {
-    state.refs.targetObject.label.text = objectName(snapshot, "target");
-  } else if (picked.id === state.refs.secondaryObject) {
-    state.refs.secondaryObject.label.text = objectName(snapshot, "secondary");
-  } else if (picked.id === state.refs.closestApproach) {
-    state.refs.closestApproach.label.text = `Distance: ${formatNumber(snapshot.geometry.relative_distance_km, 3)} km`;
-    state.refs.closestApproach.label.show = true;
+  if (state.hovered !== hovered) {
+    state.hovered = hovered;
+    updateHoverLabels();
   }
-
-  viewer.scene.requestRender();
 }
 
 async function loadData() {
@@ -723,6 +812,7 @@ playButton.addEventListener("click", togglePlay);
 homeButton.addEventListener("click", focusEvent);
 trackToggle.addEventListener("change", () => setTracking(trackToggle.checked));
 smoothToggle.addEventListener("change", () => stopAnimation());
+viewer.camera.changed.addEventListener(applyLabelFade);
 
 const hoverHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 hoverHandler.setInputAction(handleHover, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
