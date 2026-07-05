@@ -335,6 +335,10 @@ Future work should add:
 
 BEACON is not an operational collision-avoidance system. It is a research artifact showing how trustworthy machine learning methods can be evaluated for high-consequence space-domain decision support.
 
+## Artifact Availability
+
+Code, manuscript source, figures, tests, and reproduction scripts for the archived BEACON v0.2.1 research artifact are available through Zenodo at DOI `10.5281/zenodo.21209120` and through the associated GitHub repository. Raw ESA challenge data is not redistributed in the repository and must be obtained according to the original dataset provider's terms.
+
 ## References
 
 [Kessler1978] Donald J. Kessler and Burton G. Cour-Palais. Collision Frequency of Artificial Satellites: The Creation of a Debris Belt. *Journal of Geophysical Research*, 1978.
