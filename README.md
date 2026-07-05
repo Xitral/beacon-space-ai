@@ -36,6 +36,7 @@ BEACON evaluates whether lightweight machine learning can support rare-event con
 - repeated event-level split robustness
 - current-risk feature ablation
 - leakage-safe evaluation design
+- 3D conjunction visualization for interpretability
 
 ## Research Questions
 
@@ -61,6 +62,7 @@ BEACON evaluates whether lightweight machine learning can support rare-event con
 - Compare learned models against direct current-risk ranking.
 - Treat uncertainty as a human-review signal, not an automated decision rule.
 - Report repeated-split means and standard deviations because high-risk events are rare.
+- Treat the 3D viewer as an interpretability aid, not an operational orbit propagator.
 
 ## Methods
 
@@ -154,6 +156,36 @@ Regenerate figures and summary tables:
 python src/make_figures.py
 ```
 
+## 3D Orbit Viewer
+
+BEACON includes a CesiumJS viewer for representative conjunction events. The viewer uses the most grounded geometry available from the processed dataset:
+
+1. absolute target/secondary position columns when available,
+2. relative-state columns when available,
+3. miss-distance style columns when available,
+4. a deterministic reference-orbit fallback when no display geometry exists.
+
+The viewer is for interpretation and communication only. It is not an operational orbit propagator or collision-avoidance system.
+
+Generate viewer data:
+
+```bash
+python src/export_orbit_viewer.py
+```
+
+Open the viewer locally:
+
+```bash
+cd viewer
+python -m http.server 8000
+```
+
+Then open:
+
+```text
+http://localhost:8000
+```
+
 ## Paper
 
 The manuscript is available in both Markdown and LaTeX form:
@@ -201,6 +233,14 @@ beacon-space-ai/
     main.tex
     references.bib
 
+  viewer/
+    README.md
+    index.html
+    app.js
+    style.css
+    data/
+      .gitkeep
+
   tests/
     conftest.py
     test_preprocess.py
@@ -217,6 +257,7 @@ beacon-space-ai/
     uncertainty.py
     repeated_splits.py
     risk_ablation.py
+    export_orbit_viewer.py
     make_figures.py
     run_all.py
 
@@ -250,7 +291,7 @@ beacon-space-ai/
     risk_ablation_top5_recall.png
 ```
 
-Generated processed data and result CSV files are intentionally not committed. The pipeline regenerates them from the raw dataset.
+Generated processed data, result CSV files, and viewer JSON files are intentionally not committed. The pipeline regenerates them from the raw dataset.
 
 ## Key Outputs
 
@@ -280,6 +321,10 @@ Results:
 - `results/risk_ablation_summary.csv`
 - `results/risk_ablation_deltas.csv`
 
+Viewer data:
+
+- `viewer/data/conjunction_events.json`
+
 ## Project Status
 
 Current status:
@@ -293,6 +338,7 @@ Current status:
 - bootstrap uncertainty estimation implemented
 - repeated split robustness evaluation implemented
 - current-risk feature ablation implemented
+- CesiumJS 3D conjunction viewer implemented
 - synthetic test suite and CI implemented
 - manuscript converted to LaTeX
 - LaTeX paper build workflow implemented
@@ -300,7 +346,7 @@ Current status:
 
 ## Limitations
 
-BEACON is a research prototype only. Important limitations include public data only, small positive-event counts, no maneuver recommendation, no operational validation, a research-defined high-risk threshold, Bayesian-inspired uncertainty for the strongest model, and lack of external validation.
+BEACON is a research prototype only. Important limitations include public data only, small positive-event counts, no maneuver recommendation, no operational validation, a research-defined high-risk threshold, Bayesian-inspired uncertainty for the strongest model, lack of external validation, and viewer geometry that is intended for interpretability rather than operational orbit propagation.
 
 ## License
 
