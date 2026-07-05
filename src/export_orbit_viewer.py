@@ -35,6 +35,34 @@ VELOCITY_TRIPLES = [
     ("rel_vel_x", "rel_vel_y", "rel_vel_z"),
     ("rel_vel_r", "rel_vel_t", "rel_vel_n"),
 ]
+TARGET_NAME_COLUMNS = [
+    "target_name",
+    "target_object_name",
+    "primary_name",
+    "primary_object_name",
+    "t_object_name",
+    "t_name",
+    "sat1_name",
+    "object1_name",
+    "target_object_id",
+    "primary_object_id",
+    "t_object_id",
+    "target_id",
+]
+SECONDARY_NAME_COLUMNS = [
+    "secondary_name",
+    "secondary_object_name",
+    "chaser_name",
+    "chaser_object_name",
+    "c_object_name",
+    "c_name",
+    "sat2_name",
+    "object2_name",
+    "secondary_object_id",
+    "chaser_object_id",
+    "c_object_id",
+    "secondary_id",
+]
 MISS_DISTANCE_COLUMNS = [
     "miss_distance",
     "miss_distance_km",
@@ -70,7 +98,22 @@ def clean(value):
         return value if math.isfinite(value) else None
     if isinstance(value, (np.bool_, bool)):
         return bool(value)
+    if pd.isna(value):
+        return None
     return value
+
+
+def first_text(row: pd.Series, columns: list[str]) -> str | None:
+    for column in columns:
+        if column not in row.index:
+            continue
+        value = row.get(column)
+        if value is None or pd.isna(value):
+            continue
+        text = str(value).strip()
+        if text and text.lower() not in {"nan", "none", "null"}:
+            return text
+    return None
 
 
 def log10_to_probability(value: float | None) -> float | None:
@@ -322,8 +365,24 @@ def selected_events(df: pd.DataFrame, max_events: int) -> list[str]:
     scored["model_score"] = pd.to_numeric(scored.get("mean_probability"), errors="coerce").fillna(0.0)
     scored["uncertainty_score"] = pd.to_numeric(scored.get("predictive_std"), errors="coerce").fillna(0.0)
     scored["high_risk_score"] = pd.to_numeric(scored.get("high_risk"), errors="coerce").fillna(0.0)
-    scored["viewer_priority"] = scored["high_risk_score"] * 1000 + scored["model_score"] * 100 + scored["uncertainty_score"] * 50 + scored["final_risk_score"] + scored["risk_score"] * 0.25
-    return scored.groupby("event_id", as_index=False).agg(viewer_priority=("viewer_priority", "max")).sort_values("viewer_priority", ascending=False).head(max_events)["event_id"].tolist()
+    scored["has_prediction_score"] = scored[["mean_probability", "predictive_std"]].notna().any(axis=1).astype(float)
+    scored["viewer_priority"] = scored["model_score"] * 100 + scored["uncertainty_score"] * 50 + scored["final_risk_score"] + scored["risk_score"] * 0.25
+
+    event_scores = scored.groupby("event_id", as_index=False).agg(
+        high_risk_score=("high_risk_score", "max"),
+        has_prediction_score=("has_prediction_score", "max"),
+        viewer_priority=("viewer_priority", "max"),
+    )
+
+    high_risk_events = event_scores[event_scores["high_risk_score"] > 0]
+    if len(high_risk_events) >= max_events:
+        event_scores = high_risk_events
+
+    event_scores = event_scores.sort_values(
+        ["has_prediction_score", "high_risk_score", "viewer_priority"],
+        ascending=[False, False, False],
+    )
+    return event_scores.head(max_events)["event_id"].tolist()
 
 
 def snapshot(row: pd.Series, columns, points: int) -> dict:
@@ -338,6 +397,8 @@ def snapshot(row: pd.Series, columns, points: int) -> dict:
         "final_risk_probability": clean(log10_to_probability(final_risk)),
         "model_probability": clean(to_float(row.get("mean_probability"))),
         "predictive_std": clean(to_float(row.get("predictive_std"))),
+        "target_object_name": first_text(row, TARGET_NAME_COLUMNS),
+        "secondary_object_name": first_text(row, SECONDARY_NAME_COLUMNS),
         "meets_requested_horizon": clean(row.get("meets_requested_horizon")),
         "is_horizon_fallback": clean(row.get("is_horizon_fallback")),
         "geometry": geometry(row, columns, points),
@@ -360,6 +421,8 @@ def build_payload(df: pd.DataFrame, max_events: int, points: int) -> dict:
             "display_name": f"Event {event_id}",
             "high_risk": clean(int(first.get("high_risk", 0))),
             "final_risk_log10": clean(to_float(first.get("final_risk"))),
+            "target_object_name": first_text(first, TARGET_NAME_COLUMNS),
+            "secondary_object_name": first_text(first, SECONDARY_NAME_COLUMNS),
             "snapshots": [snapshot(row, df.columns, points) for _, row in event_df.iterrows()],
         })
     modes = sorted({snap["geometry"]["mode"] for event in events for snap in event["snapshots"]})
