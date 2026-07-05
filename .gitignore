@@ -14,10 +14,10 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Secrets
-.env
-.env.*
-!.env.example
+# Local environment files
+[.]env
+[.]env.*
+![.]env.example
 
 # Editor / OS
 .vscode/
@@ -44,6 +44,22 @@ results/*
 figures/*
 !results/.gitkeep
 !figures/.gitkeep
+
+# Final paper figures kept in version control for GitHub rendering
+!figures/pr_auc_by_horizon.png
+!figures/top5_recall_by_horizon.png
+!figures/brier_score_by_horizon.png
+!figures/ece_by_horizon.png
+!figures/quantile_reliability_by_horizon.png
+!figures/quantile_reliability_comparison_1d.png
+!figures/horizon_timing.png
+!figures/horizon_coverage.png
+!figures/uncertainty_positive_vs_negative.png
+!figures/positive_escalation_rate.png
+!figures/uncertainty_abstention_coverage.png
+!figures/repeated_split_pr_auc.png
+!figures/repeated_split_top5_recall.png
+!figures/repeated_split_escalation_10pct.png
 
 # Paper build files
 paper/*.aux
