@@ -256,7 +256,7 @@ Sigmoid calibration preserves ranking performance while improving probability qu
 
 Brier score and Expected Calibration Error improve after calibration across the evaluated horizons. This suggests that calibrated gradient boosting produces probabilities that are more useful for decision support than raw model outputs.
 
-The quantile-binned reliability curves provide a clearer view of calibration in the rare-event setting.
+Figure~\ref{fig:reliability-horizon} shows the quantile-binned reliability curves across prediction horizons. Quantile binning is useful in this rare-event setting because predicted probabilities are concentrated near zero, making ordinary uniformly spaced reliability bins harder to interpret.
 
 \begin{figure}[!htbp]
     \centering
@@ -265,7 +265,9 @@ The quantile-binned reliability curves provide a clearer view of calibration in 
     \label{fig:reliability-horizon}
 \end{figure}
 
-The 1-day reliability comparison shows how the current-risk baseline, raw gradient boosting, and calibrated gradient boosting differ in probability behavior.
+\FloatBarrier
+
+Figure~\ref{fig:reliability-1d} compares the current-risk baseline, raw gradient boosting, and calibrated gradient boosting at the 1-day horizon. This comparison separates ranking performance from probability behavior: a model can rank high-risk events well while still requiring calibration before its probabilities are decision-useful.
 
 \begin{figure}[!htbp]
     \centering

@@ -219,11 +219,11 @@ Sigmoid calibration preserves ranking performance while improving probability qu
 
 Brier score and Expected Calibration Error improve after calibration across the evaluated horizons. This suggests that calibrated gradient boosting produces probabilities that are more useful for decision support than raw model outputs.
 
-The quantile-binned reliability curves provide a clearer view of calibration in the rare-event setting.
+The quantile-binned reliability curves below show calibration behavior across prediction horizons. Quantile binning is useful in this rare-event setting because predicted probabilities are concentrated near zero, making ordinary uniformly spaced reliability bins harder to interpret.
 
 ![Quantile-binned reliability by horizon](../figures/quantile_reliability_by_horizon.png)
 
-The 1-day reliability comparison shows how the current-risk baseline, raw gradient boosting, and calibrated gradient boosting differ in probability behavior.
+The 1-day reliability comparison below compares the current-risk baseline, raw gradient boosting, and calibrated gradient boosting. This separates ranking performance from probability behavior: a model can rank high-risk events well while still requiring calibration before its probabilities are decision-useful.
 
 ![Quantile-binned reliability comparison at 1 day](../figures/quantile_reliability_comparison_1d.png)
 
@@ -353,7 +353,7 @@ Code, manuscript source, figures, tests, and reproduction scripts for the archiv
 
 [Guo2017] Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Weinberger. On Calibration of Modern Neural Networks. *Proceedings of the International Conference on Machine Learning*, 2017.
 
-[Gal2016] Yarin Gal and Ghahramani. Dropout as a Bayesian Approximation: Representing Model Uncertainty in Deep Learning. *Proceedings of the International Conference on Machine Learning*, 2016.
+[Gal2016] Yarin Gal and Zoubin Ghahramani. Dropout as a Bayesian Approximation: Representing Model Uncertainty in Deep Learning. *Proceedings of the International Conference on Machine Learning*, 2016.
 
 [Kendall2017] Alex Kendall and Yarin Gal. What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision? *Advances in Neural Information Processing Systems*, 2017.
 
