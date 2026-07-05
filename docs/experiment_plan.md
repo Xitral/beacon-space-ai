@@ -20,15 +20,18 @@ RQ5: Can uncertainty estimates identify predictions that should be escalated for
 
 RQ6: Are the main findings stable across repeated event-level train/validation/test splits?
 
+RQ7: How much of the learned model's performance depends on the current CDM `risk` feature?
+
 ## Core Design Rules
 
 1. Split by `event_id`, never by individual CDM row.
 2. Define labels from the final available event risk only.
 3. Exclude final-risk label metadata from model features.
-4. Keep the CDM-provided current `risk` as an allowed feature, but compare learned models against direct current-risk ranking.
-5. Report rare-event ranking and top-K recall instead of accuracy.
-6. Treat uncertainty escalation as a human-review signal, not an automated decision rule.
-7. Report repeated-split mean and standard deviation because the positive class is very small.
+4. Keep the CDM-provided current `risk` as an allowed feature for the main learned model, but compare learned models against direct current-risk ranking.
+5. Run a current-risk ablation that compares direct current-risk ranking, learned gradient boosting with current risk, and learned gradient boosting without current risk.
+6. Report rare-event ranking and top-K recall instead of accuracy.
+7. Treat uncertainty escalation as a human-review signal, not an automated decision rule.
+8. Report repeated-split mean and standard deviation because the positive class is very small.
 
 ## Data and Labeling
 
@@ -69,6 +72,8 @@ BEACON evaluates:
 - sigmoid-calibrated gradient boosting
 - Laplace-approximated Bayesian logistic regression
 - bootstrap gradient boosting ensemble
+- gradient boosting with current CDM risk
+- gradient boosting without current CDM risk
 
 ## Calibration
 
@@ -92,6 +97,41 @@ Escalation policies compare:
 - bootstrap uncertainty escalation
 
 The key interpretation is conservative: uncertainty escalation is useful if it performs far above random escalation and remains competitive with current-risk escalation. It should not be framed as replacing current-risk ranking.
+
+## Current-Risk Feature Ablation
+
+The risk ablation evaluates whether learned-model improvements depend primarily on the CDM-provided current `risk` feature or whether additional CDM/context features provide incremental ranking value.
+
+The ablation compares three policies across repeated event-level splits:
+
+```text
+current_risk_baseline
+```
+
+```text
+gradient_boosting_with_risk
+```
+
+```text
+gradient_boosting_without_risk
+```
+
+The ablation writes:
+
+```text
+results/risk_ablation_metrics.csv
+results/risk_ablation_summary.csv
+results/risk_ablation_deltas.csv
+```
+
+The figure pipeline generates:
+
+```text
+figures/risk_ablation_pr_auc.png
+figures/risk_ablation_top5_recall.png
+```
+
+The intended interpretation is careful: if the with-risk model exceeds direct current-risk ranking and the no-risk model falls substantially, then current risk is a central signal and the learned model is best framed as using current risk plus additional features for incremental triage improvement.
 
 ## Repeated Split Robustness
 
@@ -136,12 +176,15 @@ BEACON reports:
 - recall at top 1%, 5%, and 10%
 - positive escalation rate
 - repeated-split mean and standard deviation
+- risk-ablation performance deltas
 
 ## Current Result Summary
 
 Across 20 repeated event-level splits, learned models improve PR-AUC over the direct current-risk baseline at every evaluated horizon.
 
 At the top 10% escalation level, uncertainty escalation captures far more high-risk events than random escalation and is competitive with current-risk escalation. Current-risk escalation remains very strong, so the correct claim is that uncertainty is complementary to domain risk estimates.
+
+Risk ablation results should be reported before manuscript submission to make the current-risk-feature dependency explicit.
 
 ## Limitations
 
@@ -152,3 +195,4 @@ At the top 10% escalation level, uncertainty escalation captures far more high-r
 - No operational validation.
 - Bootstrap uncertainty is Bayesian-inspired, not fully Bayesian.
 - Repeated split robustness reduces single-split sensitivity but does not replace external validation.
+- The learned model's relationship to current CDM risk must be interpreted through the risk ablation, not as independent replacement of current-risk ranking.
