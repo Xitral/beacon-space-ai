@@ -22,12 +22,15 @@ The pipeline includes:
 - bootstrap gradient boosting uncertainty
 - human-review escalation analysis
 - repeated split robustness evaluation
+- current-risk feature ablation
 
 ## Key result
 
 Across 20 repeated event-level train/validation/test splits, learned gradient boosting models improve rare-event PR-AUC over direct current-risk ranking at every evaluated horizon.
 
 At the top 10% escalation level, bootstrap uncertainty captures most high-risk events and performs far above random escalation. Current-risk escalation remains very strong, so the intended interpretation is complementary decision support rather than replacement of domain risk estimates.
+
+The current-risk feature ablation is designed to quantify whether learned-model gains come from combining the current `risk` feature with additional CDM/context features or from information available without the current risk estimate.
 
 ## Why it matters
 
@@ -37,6 +40,7 @@ BEACON demonstrates how a high-consequence rare-event ML system should be evalua
 - emphasize PR-AUC and top-K recall instead of accuracy
 - report calibration and uncertainty
 - compare against realistic domain baselines
+- ablate dominant domain features
 - repeat event-level splits to reduce single-split sensitivity
 - state limitations clearly
 
