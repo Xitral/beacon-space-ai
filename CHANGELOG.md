@@ -2,6 +2,13 @@
 
 All notable project changes are documented here.
 
+## Unreleased
+
+### Added
+
+- Current-risk feature ablation experiment comparing direct current-risk ranking, gradient boosting with current risk, and gradient boosting without current risk.
+- Risk ablation summary, delta outputs, figures, pipeline integration, and synthetic delta tests.
+
 ## v0.1.0 - 2026-07-04
 
 Initial reproducible research artifact release of BEACON.
