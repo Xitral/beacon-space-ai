@@ -32,6 +32,8 @@ This project explores **trustworthy AI for space operations**, especially:
 
 **RQ5:** Can uncertainty estimates identify predictions that should be escalated for human review?
 
+**RQ6:** Are the main results stable across repeated event-level train/validation/test splits?
+
 ## Why This Matters
 
 Satellite collision avoidance is a high-consequence decision-support problem. As orbital environments become more congested, operators need tools that can help prioritize attention, identify risky events, and communicate uncertainty clearly.
@@ -48,7 +50,7 @@ Each event may contain multiple CDM observations before time of closest approach
 
 BEACON defines a high-risk event using the final available event risk. An event is labeled high-risk if its final log10 risk is greater than or equal to `-5`, corresponding to a collision probability threshold of `10^-5`.
 
-The resulting prediction task is highly imbalanced, with high-risk events making up less than 1% of the event-level dataset.
+The resulting prediction task is highly imbalanced, with high-risk events making up less than 1% of the event-level dataset. Across the repeated-split test sets, the positive rate is about `0.006079`, or roughly 12 positive test events per horizon.
 
 ## Prediction Horizons
 
@@ -161,6 +163,18 @@ python src/bayesian_logistic.py
 python src/uncertainty.py
 python src/repeated_splits.py
 python src/make_figures.py
+```
+
+For the repeated split robustness run used in the current results:
+
+```bash
+python src/repeated_splits.py --n-splits 20 --n-bootstraps 10 --max-iter 150
+```
+
+On CPU-only laptops, this can be sped up with parallel workers:
+
+```bash
+python src/repeated_splits.py --n-splits 20 --n-bootstraps 10 --max-iter 150 --n-jobs 8 --backend threading
 ```
 
 ## Repository Structure
@@ -279,20 +293,38 @@ Figures:
 - `figures/positive_escalation_rate.png`
 - `figures/uncertainty_abstention_coverage.png`
 
-## Preliminary Findings
+## Current Findings
+
+Across 20 repeated event-level train/validation/test splits, learned models improve rare-event ranking over the direct current-risk baseline at every evaluated horizon.
+
+| Horizon | Best learned model | Best learned PR-AUC | Current-risk PR-AUC |
+|---|---|---:|---:|
+| `1d` | bootstrap gradient boosting ensemble | 0.806 +/- 0.091 | 0.581 +/- 0.085 |
+| `2d` | bootstrap gradient boosting ensemble | 0.630 +/- 0.106 | 0.367 +/- 0.083 |
+| `3d` | gradient boosting | 0.493 +/- 0.090 | 0.237 +/- 0.048 |
+| `early` | gradient boosting | 0.233 +/- 0.082 | 0.109 +/- 0.031 |
+
+At the top 10% human-review escalation level, uncertainty-based escalation captures far more high-risk events than random escalation and remains competitive with current-risk escalation.
+
+| Horizon | Uncertainty escalation | Current-risk escalation | Random escalation |
+|---|---:|---:|---:|
+| `1d` | 97.5% +/- 3.9% | 99.6% +/- 1.9% | 8.3% +/- 7.2% |
+| `2d` | 96.3% +/- 4.3% | 97.9% +/- 3.7% | 9.6% +/- 7.8% |
+| `3d` | 97.5% +/- 3.9% | 97.9% +/- 3.7% | 11.3% +/- 10.2% |
+| `early` | 80.8% +/- 9.8% | 84.6% +/- 7.8% | 8.3% +/- 6.6% |
 
 Current results suggest:
 
-- learned models can improve rare-event ranking over direct current-risk ranking at several horizons
+- learned models improve rare-event ranking over direct current-risk ranking across repeated event-level splits
 - gradient boosting is a strong lightweight triage model
 - sigmoid calibration improves probability quality while preserving ranking performance
 - quantile-binned reliability curves are more informative than linear-bin curves in this rare-event setting
 - Bayesian logistic regression provides a true Bayesian probabilistic baseline
 - bootstrap ensemble uncertainty is concentrated on high-risk events
-- escalating the most uncertain predictions captures many high-risk events in the held-out test split
-- repeated split evaluation is needed because the number of high-risk test events is small
+- uncertainty-based escalation substantially outperforms random escalation
+- current-risk escalation remains very strong, so uncertainty should be framed as a complementary human-review signal rather than a replacement for current-risk ranking
 
-These findings are preliminary because the number of high-risk events is small and split sensitivity matters.
+These findings are stronger than a single held-out split result because they persist across 20 repeated event-level splits. They are still preliminary because the number of high-risk events per test horizon remains small.
 
 ## Technical Report
 
@@ -321,7 +353,7 @@ Current status:
 - uncertainty escalation analysis implemented
 - repeated split robustness evaluation implemented
 - figure generation implemented
-- technical report draft started
+- technical report draft updated with repeated split results
 - one-command reproducibility pipeline added
 
 ## Limitations
@@ -336,9 +368,9 @@ Important limitations include:
 - no operational validation
 - research-defined high-risk threshold
 - Bayesian-inspired bootstrap uncertainty rather than full Bayesian inference over the strongest model
-- possible variation under repeated event splits
+- repeated split evaluation reduces single-split sensitivity but does not replace independent external validation
 
-Future work should include more repeated split evaluation, true Bayesian nonlinear models, cost-sensitive decision metrics, external validation, and operationally informed escalation policies.
+Future work should include external validation, true Bayesian nonlinear models, cost-sensitive decision metrics, operationally informed escalation policies, and evaluation on additional conjunction datasets.
 
 ## License
 
