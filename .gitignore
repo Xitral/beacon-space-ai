@@ -32,9 +32,7 @@ data/processed/*
 !data/processed/.gitkeep
 !data/README.md
 
-# Models
-models/*
-!models/.gitkeep
+# Serialized model artifacts
 *.pkl
 *.joblib
 *.onnx
