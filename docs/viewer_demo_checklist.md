@@ -1,8 +1,8 @@
 # BEACON Viewer Demo and Export Checklist
 
-Use this checklist before recording demos, exporting figures, or sharing viewer screenshots.
+This checklist documents the demo and export checks used to keep viewer screenshots and exported research snapshots consistent with BEACON's research-only framing.
 
-## Start from a clean local export
+## Clean local export
 
 From the repository root:
 
@@ -23,13 +23,13 @@ Hard refresh the browser with `Ctrl+F5`.
 
 ## Browser smoke test
 
-Open DevTools Console and run:
+In DevTools Console:
 
 ```javascript
 runBeaconViewerSmokeTest()
 ```
 
-The result should return:
+Expected result:
 
 ```javascript
 { pass: true, failed: [], results: [...] }
@@ -48,14 +48,14 @@ The smoke test checks that:
 
 ## Interaction QA path
 
-Run through this manual sequence:
+The manual interaction check covers:
 
 1. Confirm the top watermark says either `Research-only viewer` or `Sample/fallback data` and includes `Not operational`.
 2. Confirm the `Research Validity Guardrails` card shows data source, geometry mode, available modes, and display scale.
 3. Click `Focus event`.
 4. Left-click drag the globe/viewer and confirm rotation pivots around the selected event.
 5. Scrub the horizon timeline.
-6. Confirm `Play horizons` pauses if you interact with the scrubber.
+6. Confirm `Play horizons` pauses if the scrubber is used.
 7. With `Track selected event` enabled, scrub or play horizons and confirm left-click rotation remains centered on the moving event.
 8. Disable `Track selected event`, switch events, and confirm the camera does not unexpectedly refocus.
 9. Re-enable tracking and click `Focus event`.
@@ -63,19 +63,19 @@ Run through this manual sequence:
 
 ## Export QA path
 
-Use the `Screenshot / Export Mode` card:
+The `Screenshot / Export Mode` card provides three export checks:
 
-1. Click `Export JSON`.
-   - Confirm the downloaded JSON includes `export_type`, `event_id`, `horizon`, `uncertainty_visualization`, and `snapshot`.
-2. Click `Research HTML`.
-   - Confirm the downloaded HTML includes the event, horizon, model probability, predictive std, uncertainty proxy formula, and research-only warning.
-3. Click `Export PNG`.
-   - Confirm the PNG is not blank.
-   - If it is blank, hard refresh and verify `runBeaconViewerSmokeTest()` reports `Preserve drawing buffer configured` as passing.
+1. `Export JSON`
+   - Expected JSON fields: `export_type`, `event_id`, `horizon`, `uncertainty_visualization`, and `snapshot`.
+2. `Research HTML`
+   - Expected HTML content: event, horizon, model probability, predictive std, uncertainty proxy formula, and research-only warning.
+3. `Export PNG`
+   - Expected result: the PNG is not blank.
+   - If the PNG is blank, hard refresh and check whether `runBeaconViewerSmokeTest()` reports `Preserve drawing buffer configured` as passing.
 
 ## Demo story
 
-A polished demo should follow this order:
+A polished demo follows this order:
 
 1. Start on the event queue / selected event.
 2. Point out the research-only watermark and validity guardrails.
@@ -85,9 +85,7 @@ A polished demo should follow this order:
 6. Show that original separation is preserved even when display separation is scaled.
 7. Export JSON or PNG as the final artifact.
 
-## Language to use
-
-Use:
+## Preferred language
 
 ```text
 Research-only visual analytics viewer
@@ -97,7 +95,7 @@ Display-scaled separation for visibility
 Not an operational maneuver recommendation
 ```
 
-Avoid:
+## Unsupported language
 
 ```text
 Operational collision avoidance system
