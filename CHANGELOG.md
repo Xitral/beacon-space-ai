@@ -30,6 +30,7 @@ Release-candidate status: pending local validation in `docs/release_validation_v
 - Updated README viewer instructions with smoke-test and export-mode validation.
 - Made raw test-data inspection optional so the documented training-only setup does not fail during inspection.
 - Declared `scipy` explicitly in `requirements.txt` for Bayesian logistic regression.
+- Changed the current and future source-code license to Apache License 2.0; earlier archived Zenodo versions remain under their published MIT terms.
 
 ### Notes
 
@@ -43,7 +44,7 @@ Release-candidate status: pending local validation in `docs/release_validation_v
 
 ### Added
 
-- Current-risk feature ablation experiment comparing direct current-risk ranking, gradient boosting with current risk, and gradient boosting without current risk.
+- Current-risk feature ablation experiment comparing direct current-risk ranking, gradient boosting with current risk, and gradient boosting without risk.
 - Risk ablation summary, delta outputs, figures, pipeline integration, and synthetic delta tests.
 
 ## v0.1.0 - 2026-07-04
