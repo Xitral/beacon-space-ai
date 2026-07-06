@@ -1,6 +1,6 @@
 # BEACON v0.3.0 Release Notes Draft
 
-Status: release candidate draft. Do not publish these notes as final until `docs/release_validation_v0.3.0.md` is completed.
+Status: release candidate draft. These notes describe the v0.3.0 candidate; final archival status is tracked in `docs/release_validation_v0.3.0.md`.
 
 ## Summary
 
@@ -48,24 +48,24 @@ BEACON remains a research prototype. It is not an operational collision-avoidanc
 - Added `docs/release_validation_v0.3.0.md`.
 - Added `docs/release_notes_v0.3.0.md`.
 
-## Research claims to preserve
+## Research framing
 
-Use this framing:
+Public summary framing:
 
 ```text
 BEACON combines leakage-safe rare-event ML evaluation, uncertainty-aware human-review escalation, and an interactive 3D visual analytics viewer for research-only model-grounded conjunction triage inspection.
 ```
 
-The strongest claims are:
+The strongest supported claims are:
 
 - Learned models improve rare-event ranking over direct current-risk ranking across repeated event-level splits.
 - Bootstrap predictive uncertainty is useful as a human-review escalation signal and greatly outperforms random escalation.
 - Current-risk escalation remains a strong comparator; BEACON complements rather than replaces domain risk estimates.
 - The viewer supports research inspection by exposing horizon evolution, uncertainty proxies, geometry provenance, display scaling, and non-operational guardrails.
 
-## Claims to avoid
+## Unsupported claims
 
-Do not claim:
+The current artifact does not support claims that:
 
 - BEACON is operationally validated.
 - BEACON recommends maneuvers.
@@ -74,21 +74,21 @@ Do not claim:
 - Display-scaled separations are true physical separations.
 - Machine learning replaces CDM current risk.
 
-## Validation before final release
+## Validation status
 
-Before publishing v0.3.0:
+Final v0.3.0 archival validation covers:
 
-- Complete `docs/release_validation_v0.3.0.md`.
-- Run `python -m pytest -q`.
-- Run `python src/run_all.py` with full settings.
-- Build `paper/main.pdf`.
-- Run `runBeaconViewerSmokeTest()` in the browser.
-- Export PNG/JSON/HTML snapshots and confirm they are usable.
-- Review README, paper, reproducibility guide, and changelog for version consistency.
+- `docs/release_validation_v0.3.0.md` release record completion.
+- `python -m pytest -q` test results.
+- `python src/run_all.py` full-settings pipeline results.
+- `paper/main.pdf` build result.
+- `runBeaconViewerSmokeTest()` browser result.
+- PNG/JSON/HTML snapshot export checks.
+- README, paper, reproducibility guide, and changelog version consistency.
 
 ## Citation / DOI note
 
-The current `CITATION.cff` still points to the archived v0.2.2 Zenodo version DOI. Keep it that way until the final v0.3.0 archive is minted on Zenodo. After Zenodo issues a new version DOI, update:
+The current `CITATION.cff` remains aligned with the archived v0.2.2 Zenodo version DOI. A final v0.3.0 archive would require a new Zenodo version DOI and corresponding updates to:
 
 - `CITATION.cff`,
 - README DOI/version text,
