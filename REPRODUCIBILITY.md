@@ -4,7 +4,7 @@ This guide defines the expected environment, commands, outputs, and validation s
 
 ## Artifact scope
 
-BEACON is a research prototype for calibrated, uncertainty-aware satellite conjunction triage using public conjunction data message data. It is not an operational orbit propagator, collision-avoidance system, or maneuver-recommendation tool.
+BEACON is a research prototype for calibrated, uncertainty-aware satellite conjunction triage using public conjunction data message data. It is not an operational orbit propagator or operational decision system.
 
 The v0.3.0 release-candidate scope includes:
 
@@ -95,7 +95,7 @@ For faster local iteration, repeated split parameters can be reduced:
 python src/run_all.py --repeated-n-splits 3 --repeated-n-bootstraps 3 --risk-ablation-n-splits 3
 ```
 
-Use full settings before publishing or archiving.
+The published-result ranges below correspond to the full settings rather than reduced local-iteration settings.
 
 ## Expected core outputs
 
@@ -203,11 +203,11 @@ If `pdflatex` is not available, install MiKTeX or TeX Live and reopen the termin
 - Viewer geometry is an interpretability aid and may use fallback/reference-orbit geometry when absolute position columns are unavailable.
 - Uncertainty volumes are probability-space visual proxies derived from predictive standard deviation and forecast horizon; they are not physical covariance ellipsoids.
 - Small separations may be display-scaled for visibility, but the original `relative_distance_km` is preserved in exported data.
-- The artifact has not been operationally validated and must not be used for real collision-avoidance decisions.
+- The artifact has not been operationally validated and must not be used for real operational decisions.
 
 ## Release-candidate validation record
 
-Before publishing a new archive, fill in `docs/release_validation_v0.3.0.md` with:
+`docs/release_validation_v0.3.0.md` records release-candidate evidence for:
 
 - commit SHA,
 - test command and result,
