@@ -2,7 +2,44 @@
 
 All notable project changes are documented here.
 
-## Unreleased
+## v0.3.0-rc1 - 2026-07-05
+
+Release-candidate status: pending local validation in `docs/release_validation_v0.3.0.md`.
+
+### Added
+
+- Interactive visual analytics framing in `paper/main.md` and `paper/main.tex`, including RQ8 and an explicit viewer methods section.
+- Viewer screenshot/export mode for PNG, JSON, and HTML research snapshots.
+- Research-validity guardrails for uncertainty proxies, display-scaled separations, fallback/sample data, geometry mode, and non-operational constraints.
+- Explicit probability-space uncertainty-proxy formula in the viewer and paper.
+- Viewer export data generation as part of the full `src/run_all.py` pipeline.
+- `viewer/export_config.js` to configure WebGL drawing-buffer preservation for more reliable PNG export.
+- `viewer/viewer_smoke_test.js` browser-console helper through `runBeaconViewerSmokeTest()`.
+- `REPRODUCIBILITY.md` with environment, data, commands, expected outputs, viewer checks, paper build, and caveats.
+- `docs/viewer_demo_checklist.md` for manual viewer QA and demo/export flow.
+- `docs/research_viewer_failure_points.md` documenting viewer research-validity risks and mitigations.
+- `docs/release_validation_v0.3.0.md` for final release-candidate validation outputs.
+- `docs/release_notes_v0.3.0.md` draft release notes.
+- `docs/reviewer_summary_v0.3.0.md` reviewer-facing two-page summary.
+- Tests for model split leakage, feature contracts, rare-event metrics, viewer export schema, viewer static contracts, export helper loading, and optional raw test-file inspection.
+
+### Changed
+
+- Consolidated replaced viewer runtime patches into named viewer modules.
+- Removed duplicated export controls by standardizing on the `Screenshot / Export Mode` card.
+- Updated README viewer instructions with smoke-test and export-mode validation.
+- Made raw test-data inspection optional so the documented training-only setup does not fail during inspection.
+- Declared `scipy` explicitly in `requirements.txt` for Bayesian logistic regression.
+
+### Notes
+
+- `CITATION.cff` still points to the archived v0.2.2 Zenodo version DOI until a final v0.3.0 archive is minted.
+- BEACON remains a research prototype only and is not an operational space-safety system.
+- Viewer uncertainty volumes are visual proxies, not orbital covariance ellipsoids.
+- Viewer geometry is for interpretation and communication, not operational propagation.
+- Raw data is not committed to the repository.
+
+## v0.2.2 - 2026-07-05
 
 ### Added
 
