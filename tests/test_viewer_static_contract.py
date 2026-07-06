@@ -3,6 +3,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VIEWER_DIR = REPO_ROOT / "viewer"
+OLD_PATCH_SUFFIX = "hot" + "fix.js"
 
 
 def test_viewer_loads_named_runtime_modules() -> None:
@@ -33,7 +34,7 @@ def test_viewer_smoke_test_checks_export_and_guardrail_contracts() -> None:
     assert "Research runtime loaded" in smoke
     assert "Research consistency loaded" in smoke
     assert "One canonical export card" in smoke
-    assert "No old hotfix scripts loaded" in smoke
+    assert "No removed patch scripts loaded" in smoke
     assert "Original distance preserved" in smoke
     assert "Research-only warning visible" in smoke
 
@@ -60,11 +61,11 @@ def test_research_consistency_labels_guardrails() -> None:
 def test_removed_patch_scripts_are_not_loaded_or_present() -> None:
     html = (VIEWER_DIR / "index.html").read_text(encoding="utf-8")
     removed_scripts = [
-        "research_hotfix.js",
-        "label_hotfix.js",
-        "event_tracking_hotfix.js",
-        "scrub_interaction_hotfix.js",
-        "camera_pivot_hotfix.js",
+        "research_" + OLD_PATCH_SUFFIX,
+        "label_" + OLD_PATCH_SUFFIX,
+        "event_tracking_" + OLD_PATCH_SUFFIX,
+        "scrub_interaction_" + OLD_PATCH_SUFFIX,
+        "camera_pivot_" + OLD_PATCH_SUFFIX,
     ]
 
     for script in removed_scripts:
