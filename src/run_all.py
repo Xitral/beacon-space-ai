@@ -61,6 +61,11 @@ DEFAULT_STEPS = [
         "script": "src/make_figures.py",
         "optional": False,
     },
+    {
+        "name": "Export orbit viewer data",
+        "script": "src/export_orbit_viewer.py",
+        "optional": False,
+    },
 ]
 
 
@@ -117,6 +122,10 @@ FIGURE_EXPECTED_OUTPUTS = [
     "figures/uncertainty_positive_vs_negative.png",
     "figures/positive_escalation_rate.png",
     "figures/uncertainty_abstention_coverage.png",
+]
+
+VIEWER_EXPECTED_OUTPUTS = [
+    "viewer/data/conjunction_events.json",
 ]
 
 
@@ -313,6 +322,7 @@ def expected_outputs(args: argparse.Namespace) -> list[str]:
         outputs.extend(RISK_ABLATION_EXPECTED_OUTPUTS)
 
     outputs.extend(FIGURE_EXPECTED_OUTPUTS)
+    outputs.extend(VIEWER_EXPECTED_OUTPUTS)
 
     return outputs
 
